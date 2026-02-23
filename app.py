@@ -1,5 +1,5 @@
 import streamlit as st
-from tools.mesa import cartera, ons, vencimientos, bonos, cartera2, cartera3
+from tools.mesa import cartera, ons, vencimientos, bonos, cartera2
 from tools.comerciales import cauciones_mae, cauciones_byma, alquileres, cn
 BACKOFFICE_URL = "https://neix-workbench-bo.streamlit.app/"
 BI_BANCA_PRIVADA = "https://lookerstudio.google.com/reporting/75c2a6d0-0086-491f-b112-88fe3d257ef9"
@@ -153,8 +153,6 @@ if tool:
             cartera.render(None)
         elif tool == "cartera2":
             cartera2.render(None)
-        elif tool == "cartera3":
-            cartera3.render(None)
         elif tool in ("tenencia", "tenencias", "vencimientos"):
             vencimientos.render(None)
 
@@ -211,7 +209,6 @@ with tabs[0]:
           <a class="tool-btn" href="?tool=ons">Obligaciones Negociables</a>
           <a class="tool-btn" href="?tool=cartera">Carteras (rendimiento)</a>
           <a class="tool-btn" href="?tool=cartera2">Carteras (ARG)</a>
-          <a class="tool-btn" href="?tool=cartera3">Carteras (USD)</a>
         </div>
         """,
         unsafe_allow_html=True
