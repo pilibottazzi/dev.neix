@@ -1241,64 +1241,38 @@ def render(back_to_home=None):
     _spacer(14)
 
     # =========================
-    if "cartera_export_choice" not in st.session_state:
-        st.session_state["cartera_export_choice"] = None  # "pdf" | "xlsx"
+    # Export: 2 download_buttons en paralelo (descarga en el primer click)
+    # =========================
 
-    b1, b2 = st.columns(2, gap="small")
-    with b1:
-        if st.button("PDF", use_container_width=True, key="btn_export_pdf"):
-            st.session_state["cartera_export_choice"] = "pdf"
-    with b2:
-        if st.button("Excel", use_container_width=True, key="btn_export_xlsx"):
-            st.session_state["cartera_export_choice"] = "xlsx"
-
-    export_cartera = show.drop(columns=["Ticker precio"], errors="ignore").copy()
     now = dt.datetime.now().strftime("%Y%m%d_%H%M")
+    pdf_bytes = st.session_state.get("cartera_pdf_bytes")
+    xlsx_bytes = st.session_state.get("cartera_xlsx_bytes")
 
-    # Contenedor para que salga “en el mismo lugar”
-    dl1, dl2 = st.columns(2, gap="small")
+    cpdf, cxls = st.columns(2, gap="small")
 
-    if st.session_state["cartera_export_choice"] == "pdf":
-        with dl1:
-            try:
-                pdf_bytes = build_cartera_pdf_bytes(
-                    capital_usd=float(capital),
-                    resumen=resumen,
-                    cartera_show=export_cartera,
-                    flows_show=flows_view,
-                    logo_path=LOGO_PATH,
-                )
-                fname = f"NEIX_Cartera_Comercial_{now}.pdf"
-                st.download_button(
-                    "Descargar PDF",
-                    data=pdf_bytes,
-                    file_name=fname,
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key="dl_pdf",
-                )
-            except Exception as e:
-                st.warning(f"No pude generar el PDF: {e}")
+    with cpdf:
+        if pdf_bytes:
+            st.download_button(
+                "PDF",
+                data=pdf_bytes,
+                file_name=f"NEIX_Cartera_Comercial_{now}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_pdf",
+            )
+        else:
+            st.button("PDF", use_container_width=True, disabled=True)
 
-    elif st.session_state["cartera_export_choice"] == "xlsx":
-        with dl2:
-            try:
-                xlsx_bytes = build_excel_bytes(
-                    cartera_df=export_cartera,
-                    flows_df=flows_view,
-                    resumen=resumen,
-                    capital_usd=float(capital),
-                )
-                fname = f"NEIX_Cartera_Comercial_{now}.xlsx"
-                st.download_button(
-                    "Descargar Excel",
-                    data=xlsx_bytes,
-                    file_name=fname,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="dl_xlsx",
-                )
-            except Exception as e:
-                st.warning(f"No pude generar el Excel: {e}")
-
+    with cxls:
+        if xlsx_bytes:
+            st.download_button(
+                "Excel",
+                data=xlsx_bytes,
+                file_name=f"NEIX_Cartera_Comercial_{now}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="dl_xlsx",
+            )
+        else:
+            st.button("Excel", use_container_width=True, disabled=True)
     st.markdown("</div>", unsafe_allow_html=True)
