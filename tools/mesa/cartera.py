@@ -182,7 +182,7 @@ def normalize_law(x: str) -> str:
 
 
 def law_cell_label(norm: str) -> str:
-    # ✅ lo que pediste (texto corto)
+    # ✅ texto corto
     if norm == "ARG":
         return "Ley local"
     if norm == "NY":
@@ -385,39 +385,6 @@ def calc_tir(cf: pd.DataFrame, precio: float, plazo_dias: int = 1) -> float:
     return xirr(flujos, guess=0.10)
 
 
-def calc_duration(cf: pd.DataFrame, precio: float, plazo_dias: int = 1) -> float:
-    ytm = calc_tir(cf, precio, plazo_dias=plazo_dias)
-    if not np.isfinite(ytm):
-        return np.nan
-
-    settlement = _settlement(plazo_dias)
-    fut = _future_cashflows(cf, settlement)
-    if fut.empty:
-        return np.nan
-
-    denom = 0.0
-    numer = 0.0
-    for _, row in fut.iterrows():
-        t = row["date"].to_pydatetime()
-        tiempo = (t - settlement).days / 365.0
-        monto = float(row["flujo_total"])
-        pv = monto / (1 + ytm / 100.0) ** tiempo
-        denom += pv
-        numer += tiempo * pv
-
-    if denom == 0:
-        return np.nan
-    return numer / denom
-
-
-def calc_md(cf: pd.DataFrame, precio: float, plazo_dias: int = 1) -> float:
-    dur = calc_duration(cf, precio, plazo_dias=plazo_dias)
-    ytm = calc_tir(cf, precio, plazo_dias=plazo_dias)
-    if not np.isfinite(dur) or not np.isfinite(ytm):
-        return np.nan
-    return dur / (1 + ytm / 100.0)
-
-
 # =========================
 # Cartera
 # =========================
@@ -429,7 +396,6 @@ class AssetRow:
     price: float
     vn: float
     tir: float
-    md: float
     venc: dt.date | None
     ley: str
     issuer: str
@@ -455,7 +421,7 @@ def fmt_pct_2(x: float) -> str:
 
 
 # =========================
-# Universe elegible
+# Universe elegible (no se muestra, solo para options)
 # =========================
 def build_eligible_universe(df_cf: pd.DataFrame, prices: pd.DataFrame, plazo: int = 1) -> pd.DataFrame:
     """
@@ -515,8 +481,6 @@ def build_eligible_universe(df_cf: pd.DataFrame, prices: pd.DataFrame, plazo: in
                 "Ticker precio": px_ticker,
                 "Volumen": float(vol) if np.isfinite(vol) else 0.0,
                 "TIR (%)": float(y),
-                "MD": float(calc_md(cf, px, plazo_dias=plazo)),
-                "Duration": float(calc_duration(cf, px, plazo_dias=plazo)),
             }
         )
 
@@ -589,7 +553,6 @@ def build_portfolio_table(
         vn = usd_amt / (px / 100.0) if px > 0 else np.nan
 
         y = calc_tir(cf, px, plazo_dias=plazo)
-        md = calc_md(cf, px, plazo_dias=plazo)
 
         venc = None
         if t in meta.index:
@@ -606,7 +569,6 @@ def build_portfolio_table(
                 price=float(px),
                 vn=float(vn),
                 tir=float(y) if np.isfinite(y) else np.nan,
-                md=float(md) if np.isfinite(md) else np.nan,
                 venc=venc,
                 ley=str(ley),
                 issuer=str(issuer),
@@ -615,13 +577,12 @@ def build_portfolio_table(
         )
 
     if not assets:
-        return pd.DataFrame(), {"tir": np.nan, "md": np.nan}, pd.DataFrame()
+        return pd.DataFrame(), {"tir": np.nan}, pd.DataFrame()
 
-    # Resumen ponderado por USD asignado
+    # Resumen ponderado por USD asignado (SOLO TIR)
     wsum = float(np.sum([a.usd for a in assets])) or 1.0
     tir_total = float(np.nansum([a.tir * a.usd for a in assets]) / wsum)
-    md_total = float(np.nansum([a.md * a.usd for a in assets]) / wsum)
-    resumen = {"tir": tir_total, "md": md_total}
+    resumen = {"tir": tir_total}
 
     df = pd.DataFrame(
         {
@@ -631,7 +592,6 @@ def build_portfolio_table(
             "Precio (USD, VN100)": [a.price for a in assets],
             "VN estimada": [a.vn for a in assets],
             "TIR (%)": [a.tir for a in assets],
-            "MD": [a.md for a in assets],  # ✅ Mod Duration
             "Vencimiento": [a.venc for a in assets],
             "Ley": [law_cell_label(a.ley) for a in assets],
             "Issuer": [a.issuer for a in assets],
@@ -706,8 +666,7 @@ def fmt_ar_number(x: float, dec: int = 2) -> str:
     v = _to_float(x)
     if v is None:
         return ""
-    s = f"{v:,.{dec}f}"  # ej 12,345.67 (en_US)
-    # pasar a AR -> 12.345,67
+    s = f"{v:,.{dec}f}"  # en_US
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return s
 
@@ -723,7 +682,7 @@ def _format_cartera_for_pdf(df: pd.DataFrame) -> pd.DataFrame:
     """Tabla lista para PDF (headers cortos + AR)."""
     d = df.copy()
 
-    # ✅ headers cortos
+    # headers cortos
     d = d.rename(
         columns={
             "Precio (USD, VN100)": "Precio",
@@ -732,10 +691,10 @@ def _format_cartera_for_pdf(df: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-    # ✅ dejar solo MOD duration
-    d = d.drop(columns=["Duration"], errors="ignore")
+    # ✅ asegurar que NO aparezcan Duration ni MD
+    d = d.drop(columns=["Duration", "MD"], errors="ignore")
 
-    # ✅ formateos
+    # formateos
     if "USD" in d.columns:
         d["USD"] = d["USD"].apply(fmt_money_pdf)
 
@@ -743,14 +702,10 @@ def _format_cartera_for_pdf(df: pd.DataFrame) -> pd.DataFrame:
         d["Precio"] = pd.to_numeric(d["Precio"], errors="coerce").apply(lambda v: fmt_ar_number(v, 2))
 
     if "VN" in d.columns:
-        # VN sin decimales y miles con punto
         d["VN"] = pd.to_numeric(d["VN"], errors="coerce").apply(lambda v: fmt_ar_number(v, 0))
 
     if "TIR" in d.columns:
         d["TIR"] = pd.to_numeric(d["TIR"], errors="coerce").apply(lambda v: fmt_ar_pct(v, 2))
-
-    if "MD" in d.columns:
-        d["MD"] = pd.to_numeric(d["MD"], errors="coerce").apply(lambda v: fmt_ar_number(v, 2))
 
     if "Vencimiento" in d.columns:
         d["Vencimiento"] = pd.to_datetime(d["Vencimiento"], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
@@ -758,7 +713,7 @@ def _format_cartera_for_pdf(df: pd.DataFrame) -> pd.DataFrame:
     if "%" in d.columns:
         d["%"] = pd.to_numeric(d["%"], errors="coerce").apply(lambda v: fmt_ar_number(v, 2))
 
-    # ✅ Ley: “Ley local / Ley NY / Sin ley”
+    # Ley: “Ley local / Ley NY / Sin ley”
     if "Ley" in d.columns:
         d["Ley"] = d["Ley"].astype(str).str.strip()
         d["Ley"] = d["Ley"].replace(
@@ -771,7 +726,6 @@ def _format_cartera_for_pdf(df: pd.DataFrame) -> pd.DataFrame:
                 "NA": "Sin ley",
             }
         )
-        # fallback por si viene con otras variantes
         d["Ley"] = d["Ley"].str.replace("ARG", "Ley local", regex=False)
         d["Ley"] = d["Ley"].str.replace("NY", "Ley NY", regex=False)
         d["Ley"] = d["Ley"].str.replace("(Ley local)", "Ley local", regex=False)
@@ -816,17 +770,15 @@ def _colwidths_by_name(cols: list[str], usable_w: float) -> list[float]:
         elif c == "%":
             weights.append(0.70)
         elif c == "USD":
-            weights.append(1.00)
+            weights.append(1.05)
         elif c == "Precio":
             weights.append(0.95)
         elif c == "VN":
             weights.append(0.90)
         elif c == "TIR":
-            weights.append(0.85)
-        elif c == "MD":
-            weights.append(0.75)
+            weights.append(0.90)
         elif "Venc" in c:
-            weights.append(1.00)
+            weights.append(1.05)
         elif c == "Ley":
             weights.append(0.95)
         elif c == "Issuer":
@@ -848,9 +800,9 @@ def build_cartera_pdf_bytes(
 ) -> bytes:
     """
     PDF minimal/pro:
-    - Solo logo (sin título ni "Generado")
-    - AR formatting (miles . / decimales ,)
-    - Sin Duration común (solo MD)
+    - Logo
+    - KPIs: Capital + TIR (NO Duration / NO MD)
+    - Tabla cartera sin Duration / sin MD
     """
     buff = io.BytesIO()
 
@@ -890,11 +842,10 @@ def build_cartera_pdf_bytes(
         except Exception:
             pass
 
-    # KPI (sin Duration común)
+    # KPI (sin Duration / sin MD)
     kpi_data = [
         ["Capital (USD)", fmt_money_pdf(float(capital_usd))],
         ["TIR total (pond.)", fmt_ar_pct(float(resumen.get("tir", np.nan)), 2)],
-        ["Mod. Duration (pond.)", fmt_ar_number(float(resumen.get("md", np.nan)), 2)],
     ]
 
     t_kpi = Table(kpi_data, colWidths=[usable_w * 0.42, usable_w * 0.58])
@@ -991,6 +942,49 @@ def build_cartera_pdf_bytes(
     pdf = buff.getvalue()
     buff.close()
     return pdf
+
+
+# =========================
+# Excel export
+# =========================
+def build_excel_bytes(
+    *,
+    cartera_df: pd.DataFrame,
+    flows_df: pd.DataFrame,
+    resumen: dict,
+    capital_usd: float,
+) -> bytes:
+    """
+    Exporta un .xlsx con:
+      - Resumen
+      - Cartera
+      - Flujos
+    Sin Duration / sin MD.
+    """
+    buff = io.BytesIO()
+
+    # Limpiar: no incluir Duration / MD aunque existan por algún motivo
+    cartera_x = cartera_df.copy()
+    cartera_x = cartera_x.drop(columns=["Duration", "MD"], errors="ignore")
+
+    flows_x = flows_df.copy() if flows_df is not None else pd.DataFrame()
+
+    resumen_df = pd.DataFrame(
+        {
+            "Métrica": ["Capital (USD)", "TIR total (pond.)"],
+            "Valor": [float(capital_usd), float(resumen.get("tir", np.nan))],
+        }
+    )
+
+    with pd.ExcelWriter(buff, engine="openpyxl") as writer:
+        resumen_df.to_excel(writer, index=False, sheet_name="Resumen")
+        cartera_x.to_excel(writer, index=False, sheet_name="Cartera")
+        if flows_x is None or flows_x.empty:
+            pd.DataFrame({"info": ["(sin flujos futuros)"]}).to_excel(writer, index=False, sheet_name="Flujos")
+        else:
+            flows_x.to_excel(writer, sheet_name="Flujos")
+
+    return buff.getvalue()
 
 
 # =========================
@@ -1158,9 +1152,12 @@ def render(back_to_home=None):
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    # KPIs (sin Duration común)
+    # ✅ asegurar que NO aparezcan Duration ni MD por ningún lado
+    cartera_df = cartera_df.drop(columns=["Duration", "MD"], errors="ignore")
+
+    # KPIs (solo Capital + TIR)
     st.markdown("### Resumen")
-    k1, k2, k3 = st.columns(3)
+    k1, k2 = st.columns(2)
     with k1:
         st.markdown(
             f"""
@@ -1181,16 +1178,6 @@ def render(back_to_home=None):
 """,
             unsafe_allow_html=True,
         )
-    with k3:
-        st.markdown(
-            f"""
-<div class="kpi">
-  <div class="lbl">Mod. Duration (pond.)</div>
-  <div class="val">{fmt_num_2(float(resumen["md"]))}</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
 
     _spacer(14)
 
@@ -1201,11 +1188,10 @@ def render(back_to_home=None):
     show["Precio (USD, VN100)"] = pd.to_numeric(show["Precio (USD, VN100)"], errors="coerce").round(2)
     show["VN estimada"] = pd.to_numeric(show["VN estimada"], errors="coerce").round(0)
     show["TIR (%)"] = pd.to_numeric(show["TIR (%)"], errors="coerce").round(2)
-    show["MD"] = pd.to_numeric(show["MD"], errors="coerce").round(2)
     show["Vencimiento"] = pd.to_datetime(show["Vencimiento"], errors="coerce").dt.date
 
-    # ✅ sacar Duration si quedó por algo
-    show = show.drop(columns=["Duration"], errors="ignore")
+    # ✅ por si quedó algo
+    show = show.drop(columns=["Duration", "MD"], errors="ignore")
 
     h_tbl = _height_for_rows(len(show), row_h=34, header=42, pad=12, max_h=780)
 
@@ -1220,7 +1206,6 @@ def render(back_to_home=None):
             "Precio (USD, VN100)": st.column_config.NumberColumn("Precio (USD, VN100)", format="%.2f"),
             "VN estimada": st.column_config.NumberColumn("VN estimada", format="%.0f"),
             "TIR (%)": st.column_config.NumberColumn("TIR (%)", format="%.2f"),
-            "MD": st.column_config.NumberColumn("MD (Mod. Dur.)", format="%.2f"),
             "Vencimiento": st.column_config.DateColumn("Vencimiento", format="DD/MM/YYYY"),
         },
     )
@@ -1258,33 +1243,61 @@ def render(back_to_home=None):
     _spacer(14)
 
     # =========================
-    # Descargar PDF (con logo)
+    # Export: PDF o Excel (opción)
     # =========================
-    try:
-        # ✅ versión para PDF con columnas “limpias”
-        pdf_cartera = show.drop(columns=["Ticker precio"], errors="ignore").copy()
+    st.markdown("### Exportar")
+    export_fmt = st.radio(
+        "Formato",
+        options=["PDF", "Excel"],
+        horizontal=True,
+        key="cartera_export_fmt",
+    )
 
-        # (si querés, podés ocultar Issuer en el PDF: descomentá)
-        # pdf_cartera = pdf_cartera.drop(columns=["Issuer"], errors="ignore")
+    # Armamos versiones limpias para export
+    export_cartera = show.drop(columns=["Ticker precio"], errors="ignore").copy()
+    export_cartera = export_cartera.drop(columns=["Duration", "MD"], errors="ignore")
 
-        pdf_bytes = build_cartera_pdf_bytes(
-            capital_usd=float(capital),
-            resumen=resumen,
-            cartera_show=pdf_cartera,
-            flows_show=flows,
-            logo_path=LOGO_PATH,
-        )
-        fname = f"NEIX_Cartera_Comercial_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    if export_fmt == "PDF":
+        try:
+            pdf_bytes = build_cartera_pdf_bytes(
+                capital_usd=float(capital),
+                resumen=resumen,
+                cartera_show=export_cartera,
+                flows_show=flows,
+                logo_path=LOGO_PATH,
+            )
+            fname = f"NEIX_Cartera_Comercial_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
 
-        st.download_button(
-            "Descargar PDF",
-            data=pdf_bytes,
-            file_name=fname,
-            mime="application/pdf",
-            use_container_width=True,
-            key="cartera_pdf",
-        )
-    except Exception as e:
-        st.warning(f"No pude generar el PDF: {e}")
+            st.download_button(
+                "Descargar PDF",
+                data=pdf_bytes,
+                file_name=fname,
+                mime="application/pdf",
+                use_container_width=True,
+                key="cartera_pdf",
+            )
+        except Exception as e:
+            st.warning(f"No pude generar el PDF: {e}")
+
+    else:  # Excel
+        try:
+            xlsx_bytes = build_excel_bytes(
+                cartera_df=export_cartera,
+                flows_df=flows,
+                resumen=resumen,
+                capital_usd=float(capital),
+            )
+            fname = f"NEIX_Cartera_Comercial_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+
+            st.download_button(
+                "Descargar Excel",
+                data=xlsx_bytes,
+                file_name=fname,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="cartera_xlsx",
+            )
+        except Exception as e:
+            st.warning(f"No pude generar el Excel: {e}")
 
     st.markdown("</div>", unsafe_allow_html=True)
