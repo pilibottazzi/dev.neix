@@ -1318,5 +1318,3 @@ def render(back_to_home=None):
             st.button("Excel", use_container_width=True, disabled=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-```
-
