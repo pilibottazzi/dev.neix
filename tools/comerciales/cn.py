@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
@@ -25,7 +26,12 @@ OUTPUT_COLS = [
 
 NEIX_RED = "#ff3b30"
 
+TEMPLATE_PATH = Path("data") / "Capital N - herramienta de datos.xlsx"
 
+
+# =========================
+# UI CSS
+# =========================
 def _inject_css() -> None:
     st.markdown(
         f"""
@@ -51,16 +57,23 @@ def _inject_css() -> None:
     )
 
 
+# =========================
+# Helpers
+# =========================
+def _read_template_bytes() -> bytes | None:
+    if not TEMPLATE_PATH.exists():
+        return None
+    return TEMPLATE_PATH.read_bytes()
+
+
 def _read_one_sheet(xls: pd.ExcelFile, sheet_name: str) -> Optional[pd.DataFrame]:
     try:
         df = pd.read_excel(xls, sheet_name=sheet_name, dtype=str)
     except Exception:
         return None
 
-    # limpiar espacios en headers
     df.columns = df.columns.str.strip()
 
-    # verificar que estén todas
     missing = [c for c in OUTPUT_COLS if c not in df.columns]
     if missing:
         st.warning(f"{sheet_name} falta columnas: {missing}")
@@ -80,9 +93,33 @@ def _to_excel_bytes(df: pd.DataFrame) -> bytes:
     return bio.read()
 
 
+# =========================
+# RENDER
+# =========================
 def render(back_to_home=None) -> None:
     _inject_css()
 
+    # -------------------------------------------------
+    # BOTÓN TEMPLATE (NUEVO)
+    # -------------------------------------------------
+    template_bytes = _read_template_bytes()
+
+    if template_bytes:
+        st.download_button(
+            "Descargar template para completar",
+            data=template_bytes,
+            file_name="Capital N - herramienta de datos.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    else:
+        st.warning("No encontré el template en /data")
+
+    st.divider()
+
+    # -------------------------------------------------
+    # UPLOAD
+    # -------------------------------------------------
     up = st.file_uploader(
         "CN: Subí el Excel para consolidar bancos",
         type=["xlsx", "xls"],
@@ -110,7 +147,7 @@ def render(back_to_home=None) -> None:
     df_all = pd.concat(dfs, ignore_index=True)
 
     st.download_button(
-        "Excel",
+        "Excel consolidado",
         data=_to_excel_bytes(df_all),
         file_name="cn_bancos_consolidado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
