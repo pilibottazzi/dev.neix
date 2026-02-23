@@ -746,7 +746,7 @@ def _colwidths_by_name(cols: List[str], usable_w: float) -> List[float]:
     for c in cols:
         c = str(c)
         if c == "Ticker":
-            weights.append(1.15)
+            weights.append(1.00)
         elif c == "%":
             weights.append(0.70)
         elif c == "USD":
@@ -762,7 +762,7 @@ def _colwidths_by_name(cols: List[str], usable_w: float) -> List[float]:
         elif c == "Ley":
             weights.append(0.95)
         elif c == "Issuer":
-            weights.append(1.00)
+            weights.append(1.40)
         else:
             weights.append(0.95)
 
