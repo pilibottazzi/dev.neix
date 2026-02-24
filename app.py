@@ -2,7 +2,7 @@ import streamlit as st
 
 from tools.mesa import cartera, ons, vencimientos, bonos, cartera2
 from tools.comerciales import cauciones_mae, cauciones_byma, alquileres, cn
-from tools.MKT import encuesta as mkt_encuesta  
+from tools.MKT import encuesta as encuesta  
 
 BACKOFFICE_URL = "https://neix-workbench-bo.streamlit.app/"
 BI_BANCA_PRIVADA = "https://lookerstudio.google.com/reporting/75c2a6d0-0086-491f-b112-88fe3d257ef9"
