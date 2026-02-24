@@ -3,12 +3,6 @@ import streamlit as st
 from tools.mesa import cartera, ons, vencimientos, bonos, cartera2
 from tools.comerciales import cauciones_mae, cauciones_byma, alquileres, cn
 
-# ✅ Marketing (MKT) — preferible minúscula en cloud (case-sensitive)
-try:
-    from tools.mkt import encuesta  # si renombraste tools/mkt
-except Exception:
-    from tools.MKT import encuesta  # fallback si sigue como tools/MKT
-
 BACKOFFICE_URL = "https://neix-workbench-bo.streamlit.app/"
 BI_BANCA_PRIVADA = "https://lookerstudio.google.com/reporting/75c2a6d0-0086-491f-b112-88fe3d257ef9"
 BI_BANCA_CORP = "https://lookerstudio.google.com/reporting/4f70efa8-2b86-4134-a9cb-9e6f90117f3b"
@@ -201,12 +195,6 @@ if tool:
             alquileres.render(None)
             st.stop()
 
-        # -------------------------
-        # Marketing (Encuesta embebida)
-        # -------------------------
-        elif tool in ("encuesta", "mkt", "marketing", "mkt_encuesta"):
-            encuesta.render(None)
-            st.stop()
 
         # -------------------------
         # Marketing (links a SharePoint)
@@ -375,7 +363,6 @@ with tabs[4]:
     st.markdown(
         f"""
         <div class="tool-grid">
-          <a class="tool-btn" href="?tool=encuesta">Encuesta</a>
           <a class="tool-btn" href="?tool=mkt_instructivos" target="_self">Instructivos</a>
           <a class="tool-btn" href="?tool=mkt_materiales" target="_self">Materiales de Marketing</a>
           <a class="tool-btn" href="?tool=mkt_presentaciones" target="_self">Presentaciones</a>
