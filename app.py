@@ -375,7 +375,7 @@ with tabs[4]:
     st.markdown(
         f"""
         <div class="tool-grid">
-          <a class="tool-btn" href="?tool=encuesta">Encuesta Marketing</a>
+          <a class="tool-btn" href="?tool=encuesta">Encuesta</a>
           <a class="tool-btn" href="?tool=mkt_instructivos" target="_self">Instructivos</a>
           <a class="tool-btn" href="?tool=mkt_materiales" target="_self">Materiales de Marketing</a>
           <a class="tool-btn" href="?tool=mkt_presentaciones" target="_self">Presentaciones</a>
