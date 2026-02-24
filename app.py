@@ -1,11 +1,13 @@
 import streamlit as st
+
 from tools.mesa import cartera, ons, vencimientos, bonos, cartera2
 from tools.comerciales import cauciones_mae, cauciones_byma, alquileres, cn
+from tools.MKT import encuesta as mkt_encuesta  
+
 BACKOFFICE_URL = "https://neix-workbench-bo.streamlit.app/"
 BI_BANCA_PRIVADA = "https://lookerstudio.google.com/reporting/75c2a6d0-0086-491f-b112-88fe3d257ef9"
 BI_BANCA_CORP = "https://lookerstudio.google.com/reporting/4f70efa8-2b86-4134-a9cb-9e6f90117f3b"
 BI_MIDDLE = "https://lookerstudio.google.com/reporting/5b834e5f-aeef-4042-ac0f-e1ed3564a010"
-
 
 
 # CONFIG
@@ -135,6 +137,25 @@ st.markdown(
 )
 
 
+def _run_tool_module(mod):
+    """
+    Ejecuta una tool con compatibilidad:
+    - si tiene render(): render(None)
+    - si tiene main(): main()
+    - si no: intenta ejecutar como script (fallback)
+    """
+    if hasattr(mod, "render") and callable(getattr(mod, "render")):
+        mod.render(None)
+        return
+    if hasattr(mod, "main") and callable(getattr(mod, "main")):
+        mod.main()
+        return
+    # fallback: si el módulo ejecuta UI al import (no recomendado pero posible)
+    if hasattr(mod, "__dict__"):
+        return
+    st.error("La herramienta MKT no expone render() ni main().")
+
+
 # ROUTER (?tool=...)
 tool = (st.query_params.get("tool") or "").lower().strip()
 
@@ -166,6 +187,10 @@ if tool:
         elif tool == "alquileres":
             alquileres.render(None)
 
+        # ✅ MKT
+        elif tool in ("mkt", "marketing", "mkt_encuesta", "encuesta_mkt", "encuesta"):
+            _run_tool_module(mkt_encuesta)
+
         # Operaciones -> solo link externo
         elif tool in ("operaciones", "backoffice"):
             st.markdown(
@@ -195,7 +220,8 @@ if tool:
 st.markdown("<div class='neix-title'>N E I X &nbsp;&nbsp;Workbench</div>", unsafe_allow_html=True)
 st.markdown("<div class='neix-caption'>Navegación por áreas y proyectos</div>", unsafe_allow_html=True)
 
-tabs = st.tabs(["Mesa", "Comercial", "Operaciones", "Performance · BI"])
+# ✅ Agregamos tab MKT
+tabs = st.tabs(["Mesa", "Comercial", "Operaciones", "Performance · BI", "MKT"])
 
 # MESA
 with tabs[0]:
@@ -232,7 +258,6 @@ with tabs[1]:
         """,
         unsafe_allow_html=True
     )
-
 
 
 # OPERACIONES (solo link externo)
@@ -277,3 +302,17 @@ with tabs[3]:
         unsafe_allow_html=True
     )
 
+
+# ✅ MKT
+with tabs[4]:
+    st.markdown("<div class='section-title'>Marketing</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-sub'>Encuestas y cargas de marketing</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        """
+        <div class="tool-grid">
+          <a class="tool-btn" href="?tool=mkt_encuesta">Encuesta Marketing</a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
