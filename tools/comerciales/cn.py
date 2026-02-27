@@ -1,9 +1,4 @@
-# fix_looker_cn.py
-# ---------------------------------------------------------
-# Convierte export de Looker (decimales con ".") a Excel
-# con números reales + formato con coma decimal (ES/AR).
-# Pide el archivo por selector (ventanita).
-# ---------------------------------------------------------
+
 
 from __future__ import annotations
 
