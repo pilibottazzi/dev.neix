@@ -85,10 +85,95 @@ def _read_one_sheet(xls: pd.ExcelFile, sheet_name: str) -> Optional[pd.DataFrame
     return df
 
 
+def _coerce_ar_number_to_float(series: pd.Series) -> pd.Series:
+    """
+    Convierte números que pueden venir como:
+      - "1.234,56" (AR)
+      - "1234,56"
+      - "1234.56" (EN)
+      - "1,234.56" (US)
+      - con espacios / $ etc
+    a float. Lo que no pueda, queda NaN.
+    """
+    s = series.astype(str).str.strip()
+
+    # vacíos
+    s = s.replace({"": None, "None": None, "nan": None, "NaN": None})
+
+    # limpiamos símbolos comunes
+    s = s.str.replace("\u00a0", "", regex=False)  # non-breaking space
+    s = s.str.replace(" ", "", regex=False)
+    s = s.str.replace("$", "", regex=False)
+    s = s.str.replace("USD", "", regex=False)
+    s = s.str.replace("ARS", "", regex=False)
+
+    # Heurística:
+    # si tiene "," y ".":
+    #  - si la última ocurrencia es "," => asumimos AR (miles ".", decimal ",")
+    #  - si la última ocurrencia es "." => asumimos US (miles ",", decimal ".")
+    has_comma = s.str.contains(",", na=False)
+    has_dot = s.str.contains(r"\.", na=False)
+
+    out = s.copy()
+
+    both = has_comma & has_dot
+    if both.any():
+        last_comma = out[both].str.rfind(",")
+        last_dot = out[both].str.rfind(".")
+        ar_mask = last_comma > last_dot
+        us_mask = ~ar_mask
+
+        # AR: miles "." -> remove, decimal "," -> "."
+        idx_ar = out[both].index[ar_mask]
+        out.loc[idx_ar] = (
+            out.loc[idx_ar]
+            .str.replace(".", "", regex=False)
+            .str.replace(",", ".", regex=False)
+        )
+
+        # US: miles "," -> remove, decimal "." -> keep
+        idx_us = out[both].index[us_mask]
+        out.loc[idx_us] = out.loc[idx_us].str.replace(",", "", regex=False)
+
+    # solo coma: decimal coma
+    only_comma = has_comma & ~has_dot
+    if only_comma.any():
+        out.loc[only_comma] = out.loc[only_comma].str.replace(",", ".", regex=False)
+
+    # solo punto: ya es decimal punto (o entero) => dejamos
+    # nada: entero => ok
+
+    return pd.to_numeric(out, errors="coerce")
+
+
 def _to_excel_bytes(df: pd.DataFrame) -> bytes:
+    """
+    Exporta el consolidado a Excel dejando Neto/Gross como NÚMEROS
+    y aplicando formato de número con coma decimal (estilo ES/AR).
+    """
+    df = df.copy()
+    num_cols = ["Neto Agente", "Gross Agente"]
+
+    for c in num_cols:
+        if c in df.columns:
+            df[c] = _coerce_ar_number_to_float(df[c])
+
     bio = io.BytesIO()
     with pd.ExcelWriter(bio, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Consolidado")
+
+        ws = writer.sheets["Consolidado"]
+
+        # Aplicar formato número (con coma decimal) a las columnas Neto/Gross
+        # Nota: number_format es independiente del locale; Excel mostrará coma si el locale es ES/AR.
+        for col_name in num_cols:
+            if col_name in df.columns:
+                col_idx = df.columns.get_loc(col_name) + 1  # 1-based en openpyxl
+                # iter_cols usa índices 1-based
+                for col_cells in ws.iter_cols(min_col=col_idx, max_col=col_idx, min_row=2):
+                    for cell in col_cells:
+                        cell.number_format = "#,##0.00"
+
     bio.seek(0)
     return bio.read()
 
@@ -100,7 +185,7 @@ def render(back_to_home=None) -> None:
     _inject_css()
 
     # -------------------------------------------------
-    # BOTÓN TEMPLATE (NUEVO)
+    # BOTÓN TEMPLATE
     # -------------------------------------------------
     template_bytes = _read_template_bytes()
 
