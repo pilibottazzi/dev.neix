@@ -1,157 +1,243 @@
+# tools/comercial/cn.py
 from __future__ import annotations
 
 import io
 from pathlib import Path
-import sys
+from typing import List, Optional
 
 import pandas as pd
 import streamlit as st
 
 
-NUM_COLS = ["Neto Agente", "Gross Agente"]
+SHEETS = ["WSC A", "WSC B", "INSIGNEO"]
+
+OUTPUT_COLS = [
+    "Fecha",
+    "Cuenta",
+    "Producto",
+    "Neto Agente",
+    "Gross Agente",
+    "Id_Off",
+    "Id_manager",
+    "MANAGER",
+    "Id_oficial",
+    "OFICIAL",
+]
+
+NEIX_RED = "#ff3b30"
+
+TEMPLATE_PATH = Path("data") / "Capital N - herramienta de datos.xlsx"
 
 
-def pick_file_gui() -> str | None:
-    """Selector GUI (tkinter). Devuelve path o None. (Solo local)"""
-    try:
-        from tkinter import Tk, filedialog  # type: ignore
-    except Exception:
-        return None
+# =========================
+# UI CSS
+# =========================
+def _inject_css() -> None:
+    st.markdown(
+        f"""
+<style>
+  .block-container {{
+    max-width: 1180px;
+    padding-top: 1.2rem;
+    padding-bottom: 2rem;
+  }}
 
-    try:
-        Tk().withdraw()
-        return filedialog.askopenfilename(
-            title="Seleccioná el Excel exportado de Looker",
-            filetypes=[("Excel files", "*.xlsx *.xls")],
-        )
-    except Exception:
-        return None
-
-
-def pick_file_cli() -> str | None:
-    """Fallback local: pedir ruta por consola."""
-    print("No pude abrir selector. Pegá la ruta del Excel (o Enter para cancelar):")
-    p = input("> ").strip().strip('"')
-    return p or None
-
-
-def to_numeric_series(x: pd.Series) -> pd.Series:
-    """
-    Looker suele exportar con decimal punto (84.15).
-    Fuerza a float aunque venga como texto.
-    """
-    s = x.astype(str).str.strip()
-    s = s.replace({"": None, "None": None, "nan": None, "NaN": None})
-    s = (
-        s.str.replace("\u00a0", "", regex=False)
-        .str.replace(" ", "", regex=False)
-        .str.replace("$", "", regex=False)
+  div[data-testid="stDownloadButton"] > button {{
+    width: 100% !important;
+    background: {NEIX_RED} !important;
+    color: white !important;
+    border-radius: 14px !important;
+    font-weight: 800 !important;
+    padding: 0.95rem 1rem !important;
+    border: 0 !important;
+  }}
+</style>
+""",
+        unsafe_allow_html=True,
     )
-    return pd.to_numeric(s, errors="coerce")
 
 
-def _process_excel_bytes(file_bytes: bytes) -> tuple[pd.DataFrame, bytes]:
-    """Procesa el excel subido (bytes) y devuelve DF + excel corregido (bytes)."""
-    df = pd.read_excel(io.BytesIO(file_bytes))
-    df.columns = [str(c).strip() for c in df.columns]
+# =========================
+# Helpers
+# =========================
+def _read_template_bytes() -> bytes | None:
+    if not TEMPLATE_PATH.exists():
+        return None
+    return TEMPLATE_PATH.read_bytes()
 
-    for c in NUM_COLS:
+
+def _read_one_sheet(xls: pd.ExcelFile, sheet_name: str) -> Optional[pd.DataFrame]:
+    try:
+        df = pd.read_excel(xls, sheet_name=sheet_name, dtype=str)
+    except Exception:
+        return None
+
+    df.columns = df.columns.str.strip()
+
+    missing = [c for c in OUTPUT_COLS if c not in df.columns]
+    if missing:
+        st.warning(f"{sheet_name} falta columnas: {missing}")
+        return None
+
+    df = df[OUTPUT_COLS].copy()
+    df.insert(0, "Banco", sheet_name)
+
+    return df
+
+
+def _coerce_ar_number_to_float(series: pd.Series) -> pd.Series:
+    """
+    Convierte números que pueden venir como:
+      - "1.234,56" (AR)
+      - "1234,56"
+      - "1234.56" (EN)
+      - "1,234.56" (US)
+      - con espacios / $ etc
+    a float. Lo que no pueda, queda NaN.
+    """
+    s = series.astype(str).str.strip()
+
+    # vacíos
+    s = s.replace({"": None, "None": None, "nan": None, "NaN": None})
+
+    # limpiamos símbolos comunes
+    s = s.str.replace("\u00a0", "", regex=False)  # non-breaking space
+    s = s.str.replace(" ", "", regex=False)
+    s = s.str.replace("$", "", regex=False)
+    s = s.str.replace("USD", "", regex=False)
+    s = s.str.replace("ARS", "", regex=False)
+
+    # Heurística:
+    # si tiene "," y ".":
+    #  - si la última ocurrencia es "," => asumimos AR (miles ".", decimal ",")
+    #  - si la última ocurrencia es "." => asumimos US (miles ",", decimal ".")
+    has_comma = s.str.contains(",", na=False)
+    has_dot = s.str.contains(r"\.", na=False)
+
+    out = s.copy()
+
+    both = has_comma & has_dot
+    if both.any():
+        last_comma = out[both].str.rfind(",")
+        last_dot = out[both].str.rfind(".")
+        ar_mask = last_comma > last_dot
+        us_mask = ~ar_mask
+
+        # AR: miles "." -> remove, decimal "," -> "."
+        idx_ar = out[both].index[ar_mask]
+        out.loc[idx_ar] = (
+            out.loc[idx_ar]
+            .str.replace(".", "", regex=False)
+            .str.replace(",", ".", regex=False)
+        )
+
+        # US: miles "," -> remove, decimal "." -> keep
+        idx_us = out[both].index[us_mask]
+        out.loc[idx_us] = out.loc[idx_us].str.replace(",", "", regex=False)
+
+    # solo coma: decimal coma
+    only_comma = has_comma & ~has_dot
+    if only_comma.any():
+        out.loc[only_comma] = out.loc[only_comma].str.replace(",", ".", regex=False)
+
+    # solo punto: ya es decimal punto (o entero) => dejamos
+    # nada: entero => ok
+
+    return pd.to_numeric(out, errors="coerce")
+
+
+def _to_excel_bytes(df: pd.DataFrame) -> bytes:
+    """
+    Exporta el consolidado a Excel dejando Neto/Gross como NÚMEROS
+    y aplicando formato de número con coma decimal (estilo ES/AR).
+    """
+    df = df.copy()
+    num_cols = ["Neto Agente", "Gross Agente"]
+
+    for c in num_cols:
         if c in df.columns:
-            df[c] = to_numeric_series(df[c])
+            df[c] = _coerce_ar_number_to_float(df[c])
 
-    # Export con formato numérico
     bio = io.BytesIO()
     with pd.ExcelWriter(bio, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Consolidado")
+
         ws = writer.sheets["Consolidado"]
 
-        for c in NUM_COLS:
-            if c in df.columns:
-                col_idx = df.columns.get_loc(c) + 1  # 1-based
+        # Aplicar formato número (con coma decimal) a las columnas Neto/Gross
+        # Nota: number_format es independiente del locale; Excel mostrará coma si el locale es ES/AR.
+        for col_name in num_cols:
+            if col_name in df.columns:
+                col_idx = df.columns.get_loc(col_name) + 1  # 1-based en openpyxl
+                # iter_cols usa índices 1-based
                 for col_cells in ws.iter_cols(min_col=col_idx, max_col=col_idx, min_row=2):
                     for cell in col_cells:
                         cell.number_format = "#,##0.00"
 
     bio.seek(0)
-    return df, bio.read()
+    return bio.read()
 
 
-# =========================================================
-# STREAMLIT ENTRYPOINT (Workbench)
-# =========================================================
+# =========================
+# RENDER
+# =========================
 def render(back_to_home=None) -> None:
-    st.markdown("## Fix Looker → Excel con coma decimal")
-    st.caption("Subí el Excel exportado de Looker y te devuelvo una copia con Neto/Gross como números (formato #,##0.00).")
+    _inject_css()
 
+    # -------------------------------------------------
+    # BOTÓN TEMPLATE
+    # -------------------------------------------------
+    template_bytes = _read_template_bytes()
+
+    if template_bytes:
+        st.download_button(
+            "Descargar template para completar",
+            data=template_bytes,
+            file_name="Capital N - herramienta de datos.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    else:
+        st.warning("No encontré el template en /data")
+
+    st.divider()
+
+    # -------------------------------------------------
+    # UPLOAD
+    # -------------------------------------------------
     up = st.file_uploader(
-        "Subí el Excel (Looker)",
+        "CN: Subí el Excel para consolidar bancos",
         type=["xlsx", "xls"],
         accept_multiple_files=False,
     )
-
     if not up:
-        st.info("Subí un archivo para comenzar.")
         return
 
     try:
-        df, out_bytes = _process_excel_bytes(up.getvalue())
-    except Exception as e:
-        st.error(f"No pude procesar el archivo: {e}")
+        xls = pd.ExcelFile(io.BytesIO(up.getvalue()))
+    except Exception:
+        st.error("No pude leer el archivo.")
         return
 
+    dfs: List[pd.DataFrame] = []
+    for s in SHEETS:
+        one = _read_one_sheet(xls, s)
+        if one is not None:
+            dfs.append(one)
+
+    if not dfs:
+        st.warning("No encontré hojas válidas.")
+        return
+
+    df_all = pd.concat(dfs, ignore_index=True)
+
     st.download_button(
-        "Descargar Excel corregido",
-        data=out_bytes,
-        file_name=Path(up.name).stem + "_coma.xlsx",
+        "Excel consolidado",
+        data=_to_excel_bytes(df_all),
+        file_name="cn_bancos_consolidado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 
-    st.markdown("### Preview")
-    st.dataframe(df, use_container_width=True, height=600)
-
-
-# =========================================================
-# LOCAL SCRIPT ENTRYPOINT (Opcional)
-# =========================================================
-def main() -> None:
-    file_path = pick_file_gui()
-    if not file_path:
-        file_path = pick_file_cli()
-
-    if not file_path:
-        print("Cancelado.")
-        return
-
-    input_path = Path(file_path)
-    if not input_path.exists():
-        print(f"No existe: {input_path}")
-        sys.exit(1)
-
-    output_path = input_path.with_name(input_path.stem + "_coma.xlsx")
-
-    df = pd.read_excel(input_path)
-    df.columns = [str(c).strip() for c in df.columns]
-
-    for c in NUM_COLS:
-        if c in df.columns:
-            df[c] = to_numeric_series(df[c])
-        else:
-            print(f"[WARN] No encontré columna '{c}'")
-
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Consolidado")
-        ws = writer.sheets["Consolidado"]
-
-        for c in NUM_COLS:
-            if c in df.columns:
-                col_idx = df.columns.get_loc(c) + 1
-                for col_cells in ws.iter_cols(min_col=col_idx, max_col=col_idx, min_row=2):
-                    for cell in col_cells:
-                        cell.number_format = "#,##0.00"
-
-    print(f"✅ Listo. Generado: {output_path}")
-
-
-if __name__ == "__main__":
-    main()
+    st.markdown("### Consolidado")
+    st.dataframe(df_all, use_container_width=True, height=620)
