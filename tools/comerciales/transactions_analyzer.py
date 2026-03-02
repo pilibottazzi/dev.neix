@@ -314,7 +314,7 @@ def _select_columns(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
 # =========================
 # Main render
 # =========================
-def render() -> None:
+def render(_ctx=None) -> None:
     _inject_css()
 
     st.title("Movimientos CV — Transactions Analyzer")
