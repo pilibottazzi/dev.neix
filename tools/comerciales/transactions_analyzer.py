@@ -1,16 +1,4 @@
 # tools/comerciales/transactions_analyzer.py
-# =========================================================
-# Movimientos CV — Transactions Analyzer (NEIX Workbench)
-# Fase 1 (ordenado / sin ruido):
-#   - Detecta header real buscando "Process Date" (aunque haya metadata arriba)
-#   - Tabs: CASH_MOVEMENT y TRADE
-#   - CASH_MOVEMENT: SOLO FEDERAL FUNDS RECEIVED / FEDERAL FUNDS SENT
-#   - TRADE: SOLO ETFs (Security Type = EXCHANGE TRADED FUNDS) + Buy/Sell (BUY/SELL)
-#
-# Fix del crash que te apareció:
-#   - Si read_excel devuelve dict (muchas sheets) se selecciona una sheet y recién ahí se usa .loc
-# =========================================================
-
 from __future__ import annotations
 
 import io
