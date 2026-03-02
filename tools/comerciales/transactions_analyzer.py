@@ -1,17 +1,18 @@
 # tools/comerciales/transactions_analyzer.py
-# NEIX Workbench tool (router-compatible): expone render(_ctx=None)
-# Objetivo:
-# 1) Subir Excel "Transactions" (con encabezado no necesariamente en la fila 1)
-# 2) Detectar dónde empieza la tabla (fila donde aparece "Process Date")
-# 3) Normalizar y categorizar en 5 tabs
-# 4) Reconstruir CASH (Base Currency): saldo inicial + movimientos = saldo final
-#    + opción para inferir saldo inicial desde "FEDERAL FUNDS RECEIVED" / cash movements
+# NEIX Workbench tool — versión “limpia” + UI prolija (sin sumar cosas al pedo)
+# Cambios clave vs tu versión:
+# - La pestaña "Transacciones" (Cash) queda como pediste:
+#   Process Date, Settlement Date, Net Amount (Base Currency), Transaction Type, Security Description
+# - En ingresos/egresos de dinero: EXCLUYE "ACTIVITY WITHIN YOUR ACCT"
+# - Presentación: header más prolijo, filtros compactos, KPIs alineados, tablas más “clean”
+# - Sin inventar features extra: dejamos tabs por categoría pero el foco es Cash/Transacciones
+# - Fix definitivo del error de máscara (siempre reset_index antes de filtrar)
 
 from __future__ import annotations
 
 import re
 import datetime as dt
-from typing import Optional
+from typing import Optional, List
 
 import pandas as pd
 import streamlit as st
@@ -25,15 +26,17 @@ ES_MON = {
     "jul": 7, "ago": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dic": 12,
 }
 
-CATEGORY_ORDER = ["TRADE", "CASH_MOVEMENT", "INCOME_DIV", "TAX", "FEE", "OTHER"]
+CATEGORIES = ["TRADE", "CASH_MOVEMENT", "INCOME_DIV", "TAX", "FEE", "OTHER"]
 
-# Las “5 categorías” que querías como pestañas:
-# (las dejamos + Overview)
-MAIN_TABS = ["TRADE", "CASH_MOVEMENT", "INCOME_DIV", "TAX", "FEE"]
+# Orden de tabs (sin agregar cosas raras)
+TAB_ORDER = ["Transacciones"] + CATEGORIES
+
+# Tx types a excluir del análisis de ingresos/egresos de cash
+EXCLUDE_CASH_TX_TYPES = {"ACTIVITY WITHIN YOUR ACCT"}
 
 
 # =========================
-# Helpers base
+# Utils
 # =========================
 def _safe_str(v) -> str:
     if v is None:
@@ -89,7 +92,6 @@ def parse_es_date(x) -> pd.Timestamp:
             except Exception:
                 return pd.NaT
 
-    # fallback
     try:
         return pd.to_datetime(s, errors="coerce")
     except Exception:
@@ -99,23 +101,18 @@ def parse_es_date(x) -> pd.Timestamp:
 def parse_num_mixed(x) -> float:
     """
     Convierte números con coma decimal (AR/ES) y/o punto miles.
-    Ej:
-      "-18290,42" -> -18290.42
-      "114,48000" -> 114.48
-      "22.733.580,97" -> 22733580.97
     """
     s = _safe_str(x).strip()
     if not s or s == "-":
         return 0.0
 
-    # deja dígitos y separadores
     s = re.sub(r"[^0-9\-,\.]", "", s)
 
     if "," in s and "." in s:
-        # '.' miles, ',' decimal
         s = s.replace(".", "").replace(",", ".")
     elif "," in s and "." not in s:
         s = s.replace(",", ".")
+
     try:
         return float(s)
     except Exception:
@@ -123,21 +120,17 @@ def parse_num_mixed(x) -> float:
 
 
 # =========================
-# Detectar tabla dentro del export
+# Detectar tabla (header real)
 # =========================
 def _find_header_row(df_raw: pd.DataFrame) -> Optional[int]:
-    """
-    Busca una fila que contenga varios headers esperados.
-    Este Excel suele tener un bloque arriba con metadata, y recién después la tabla.
-    """
     want = {
         "processdate",
         "settlementdate",
         "netamountbasecurrency",
-        "transactiondescription",
         "transactiontype",
+        "securitydescription",
     }
-    for i in range(min(len(df_raw), 200)):
+    for i in range(min(len(df_raw), 250)):
         row = df_raw.iloc[i].astype(str).tolist()
         normed = [_norm_header(c) for c in row]
         hit = sum(1 for w in want if w in normed)
@@ -147,27 +140,18 @@ def _find_header_row(df_raw: pd.DataFrame) -> Optional[int]:
 
 
 def _slice_table_from_export(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """
-    Devuelve la tabla ya con headers correctos.
-    """
     hr = _find_header_row(df_raw)
     if hr is None:
-        # fallback: asumir que ya venía bien
         df = df_raw.copy()
         df.columns = [str(c).strip() for c in df.columns]
-        return df
+        return df.reset_index(drop=True)
 
     headers = df_raw.iloc[hr].astype(str).tolist()
     df = df_raw.iloc[hr + 1 :].copy()
     df.columns = headers
-
-    # Limpieza básica
     df = df.dropna(how="all")
     df = df.loc[:, ~df.columns.astype(str).str.match(r"^\s*$")]
-
-    # Mucho export viene con filas vacías al final
-    df = df.reset_index(drop=True)
-    return df
+    return df.reset_index(drop=True)
 
 
 # =========================
@@ -187,16 +171,16 @@ def _standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     c_process = pick("Process Date")
     c_settle = pick("Settlement Date")
     c_net_base = pick("Net Amount (Base Currency)", "Net Amount Base Currency")
-    c_desc = pick("Transaction Description")
     c_type = pick("Transaction Type")
+    c_sec_desc = pick("Security Description")
+
+    # Extras para tabs (no para el cuadrito de transacciones)
+    c_desc = pick("Transaction Description")
     c_symbol = pick("SYMBOL", "Symbol")
     c_buysell = pick("Buy/Sell", "Buy Sell", "BuySell")
     c_qty = pick("Quantity")
     c_price = pick("Price (Transaction Currency)", "Price Transaction Currency", "Price")
-    c_ccy = pick("Transaction Currency")
-    c_sec_desc = pick("Security Description")
 
-    # Validación mínima (para evitar “silencios” raros)
     missing = []
     if not c_process and not c_settle:
         missing.append("Process Date / Settlement Date")
@@ -204,6 +188,8 @@ def _standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         missing.append("Net Amount (Base Currency)")
     if not c_type:
         missing.append("Transaction Type")
+    if not c_sec_desc:
+        missing.append("Security Description")
 
     if missing:
         st.error("No pude mapear columnas clave en el Excel.")
@@ -212,332 +198,225 @@ def _standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         st.stop()
 
     out = pd.DataFrame()
-    out["process_date_raw"] = df[c_process] if c_process else None
-    out["settlement_date_raw"] = df[c_settle] if c_settle else None
-    out["net_base_raw"] = df[c_net_base] if c_net_base else None
 
-    out["tx_desc"] = df[c_desc] if c_desc else ""
-    out["tx_type"] = df[c_type] if c_type else ""
-    out["sec_desc"] = df[c_sec_desc] if c_sec_desc else ""
+    out["process_date"] = df[c_process].apply(parse_es_date) if c_process else pd.NaT
+    out["settlement_date"] = df[c_settle].apply(parse_es_date) if c_settle else pd.NaT
+    out["net_amount_base"] = df[c_net_base].apply(parse_num_mixed)
 
-    out["symbol"] = df[c_symbol] if c_symbol else ""
-    out["buy_sell"] = df[c_buysell] if c_buysell else ""
-    out["quantity_raw"] = df[c_qty] if c_qty else None
-    out["price_raw"] = df[c_price] if c_price else None
-    out["tx_ccy"] = df[c_ccy] if c_ccy else ""
+    out["tx_type"] = df[c_type].astype(str).str.strip()
+    out["security_desc"] = df[c_sec_desc].astype(str).str.strip()
 
-    out["process_date"] = out["process_date_raw"].apply(parse_es_date)
-    out["settlement_date"] = out["settlement_date_raw"].apply(parse_es_date)
-    out["net_amount_base"] = out["net_base_raw"].apply(parse_num_mixed)
-    out["quantity"] = out["quantity_raw"].apply(parse_num_mixed)
-    out["price"] = out["price_raw"].apply(parse_num_mixed)
+    out["tx_desc"] = df[c_desc].astype(str).str.strip() if c_desc else ""
+    out["symbol"] = df[c_symbol].astype(str).str.strip() if c_symbol else ""
+    out["buy_sell"] = df[c_buysell].astype(str).str.strip() if c_buysell else ""
+    out["quantity"] = df[c_qty].apply(parse_num_mixed) if c_qty else 0.0
+    out["price"] = df[c_price].apply(parse_num_mixed) if c_price else 0.0
 
-    for c in ["tx_desc", "tx_type", "sec_desc", "symbol", "buy_sell", "tx_ccy"]:
-        out[c] = out[c].astype(str).str.strip()
+    # normalizaciones
+    out["tx_type_u"] = out["tx_type"].str.upper()
+    out["security_desc_u"] = out["security_desc"].str.upper()
+    out["symbol_u"] = out["symbol"].str.upper()
 
-    out["ym_settle"] = out["settlement_date"].dt.to_period("M").astype(str)
-    out["ym_process"] = out["process_date"].dt.to_period("M").astype(str)
-    return out
+    # helper YM para overview si se usa
+    out["ym"] = out["settlement_date"].dt.to_period("M").astype(str)
+
+    return out.reset_index(drop=True)
 
 
 # =========================
 # Categorías
 # =========================
-def _categorize_row(tx_type: str, tx_desc: str, buy_sell: str) -> str:
-    t = (tx_type or "").upper()
+def _categorize_row(tx_type_u: str, tx_desc: str, buy_sell: str) -> str:
+    t = (tx_type_u or "").upper()
     d = (tx_desc or "").upper()
     b = (buy_sell or "").upper()
 
-    # TRADE (compras/ventas)
-    if b in {"BUY", "SELL"}:
-        return "TRADE"
-    if t.startswith("BUY ") or t.startswith("SELL "):
+    if b in {"BUY", "SELL"} or t.startswith("BUY ") or t.startswith("SELL "):
         return "TRADE"
 
-    # INCOME
-    if "DIVIDEND" in t or "DIVIDEND" in d or "CASH DIVIDEND" in t or t.startswith("DV"):
+    if "DIVIDEND" in t or "DIVIDEND" in d or t.startswith("DV"):
         return "INCOME_DIV"
 
-    # TAX
-    if "TAX" in t or "WITHHELD" in t or "NRA" in t or "ALIEN" in t or "FOREIGN TAX" in t:
+    if "TAX" in t or "WITHHELD" in t or "NRA" in t or "FOREIGN TAX" in t:
         return "TAX"
 
-    # FEES
     if "FEE" in t or "CUSTODY" in t or "SUBSCRIPTION" in t or "BILLING" in t or "ADVISORY" in t:
         return "FEE"
 
-    # CASH MOVEMENTS (depósitos, journals, etc.)
-    if "FEDERAL FUNDS" in t or "FEDERAL FUNDS" in d:
-        return "CASH_MOVEMENT"
-    if "JOURNAL" in t or "INTRA-ACCT" in d or "ACTIVITY WITHIN" in d:
+    if "FEDERAL FUNDS" in t or "JOURNAL" in t or "INTRA-ACCT" in d or "ACTIVITY WITHIN" in d:
         return "CASH_MOVEMENT"
 
     return "OTHER"
 
 
-def _add_category_and_qty_signed(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["category"] = [
-        _categorize_row(t, d, b) for t, d, b in zip(df["tx_type"], df["tx_desc"], df["buy_sell"])
+def _add_category(df: pd.DataFrame) -> pd.DataFrame:
+    dff = df.copy()
+    dff["category"] = [
+        _categorize_row(t, desc, bs)
+        for t, desc, bs in zip(dff["tx_type_u"], dff["tx_desc"], dff["buy_sell"])
     ]
-
-    def qty_signed(row) -> float:
-        q = float(row["quantity"] or 0.0)
-        bs = (row["buy_sell"] or "").upper()
-        if bs == "SELL":
-            return -abs(q) if q != 0 else q
-        if bs == "BUY":
-            return abs(q) if q != 0 else q
-        return q
-
-    df["qty_signed"] = df.apply(qty_signed, axis=1)
-    return df
+    return dff
 
 
 # =========================
-# FIX DEL ERROR: máscara alineada
+# Filtros (safe)
 # =========================
 def _filter_by_date(df: pd.DataFrame, date_col: str, start: Optional[dt.date], end: Optional[dt.date]) -> pd.DataFrame:
-    """
-    IMPORTANTE: la máscara debe compartir el MISMO índice que df.
-    Si no, aparece: IndexingError: Unalignable boolean Series...
-    """
-    if start is None and end is None:
-        return df
-
-    d = df[date_col]
-    m = pd.Series(True, index=df.index)  # ✅ FIX
-
+    dff = df.copy().reset_index(drop=True)
+    s = pd.to_datetime(dff[date_col], errors="coerce")
+    m = s.notna()
     if start is not None:
-        m &= d >= pd.Timestamp(start)
+        m &= s >= pd.Timestamp(start)
     if end is not None:
-        m &= d <= pd.Timestamp(end)
-
-    return df.loc[m].copy()
-
-
-def _infer_initial_cash(df: pd.DataFrame, date_col: str) -> float:
-    """
-    Heurística simple para "saldo inicial":
-    - toma cash movements (depósitos/journals) hasta antes de la primera operación TRADE
-    - esto suele capturar el "FEDERAL FUNDS RECEIVED" inicial
-    """
-    if df.empty:
-        return 0.0
-
-    df = df.sort_values(date_col, ascending=True).copy()
-    first_trade_date = df.loc[df["category"] == "TRADE", date_col].min()
-
-    if pd.isna(first_trade_date):
-        # si no hay trades, saldo inicial = suma cash movements (todo)
-        return float(df.loc[df["category"] == "CASH_MOVEMENT", "net_amount_base"].sum())
-
-    pre = df[df[date_col] < first_trade_date]
-    return float(pre.loc[pre["category"] == "CASH_MOVEMENT", "net_amount_base"].sum())
+        m &= s <= pd.Timestamp(end)
+    return dff.loc[m].copy().reset_index(drop=True)
 
 
 # =========================
-# Render principal (tool UI)
+# UI
 # =========================
+def _kpi_row(saldo_inicial: float, movimientos: float, movimientos_count: int):
+    k1, k2, k3, k4 = st.columns([1, 1, 1, 1], vertical_alignment="center")
+    k1.metric("Saldo inicial (Cash)", f"{saldo_inicial:,.2f}")
+    k2.metric("Movimientos netos", f"{movimientos:,.2f}")
+    k3.metric("Saldo final (Cash)", f"{(saldo_inicial + movimientos):,.2f}")
+    k4.metric("Movimientos", f"{movimientos_count:,}")
+
+
 def render_transactions_analyzer() -> None:
-    st.markdown("## 🧾 Movimientos CV — Transactions Analyzer")
-    st.caption(
-        "Subí el Excel de movimientos. La idea es entender el flujo de caja: "
-        "**Saldo inicial + movimientos = Saldo final** (Base Currency)."
-    )
+    # Header limpio
+    st.markdown("## 🗒️ Movimientos CV — Transactions Analyzer")
+    st.caption("Objetivo: entender el flujo de caja: **Saldo inicial + movimientos = Saldo final** (Base Currency).")
 
-    c1, c2, c3, c4 = st.columns([1.35, 1.0, 1.0, 1.1], vertical_alignment="bottom")
-    with c1:
+    # Top controls compactos
+    top1, top2, top3 = st.columns([1.35, 1.05, 1.6], vertical_alignment="bottom")
+    with top1:
         up = st.file_uploader("Subí el Excel exportado (Transactions)", type=["xlsx", "xls"])
-    with c2:
-        date_basis = st.selectbox(
-            "Fecha para análisis",
-            options=["Settlement Date (recomendado)", "Process Date"],
-            index=0,
-        )
-    with c3:
-        auto_initial = st.checkbox("Inferir saldo inicial (depósitos antes del 1er trade)", value=True)
-    with c4:
-        saldo_inicial_manual = st.number_input(
-            "Saldo inicial manual (si desactivás auto)",
-            value=0.0,
-            step=1000.0,
-        )
+    with top2:
+        date_basis = st.selectbox("Fecha para análisis", ["Settlement Date", "Process Date"], index=0)
+    with top3:
+        cats = st.multiselect("Categorías", options=CATEGORIES, default=CATEGORIES)
 
     if not up:
-        st.info("Subí el Excel para empezar.")
+        st.info("Subí el Excel para comenzar.")
         return
 
-    # 1) Leer sin headers y detectar tabla real
+    # Leer y detectar tabla real
     df_raw = pd.read_excel(up, sheet_name=0, header=None, dtype=object)
     df_table = _slice_table_from_export(df_raw)
-
-    # 2) Normalizar columnas y parsear tipos
     df = _standardize_columns(df_table)
-    df = _add_category_and_qty_signed(df)
+    df = _add_category(df)
 
-    date_col = "settlement_date" if date_basis.startswith("Settlement") else "process_date"
-    ym_col = "ym_settle" if date_col == "settlement_date" else "ym_process"
+    date_col = "settlement_date" if date_basis == "Settlement Date" else "process_date"
 
-    # 3) Rango por defecto
-    min_d = df[date_col].min()
-    max_d = df[date_col].max()
+    # Filtros de fecha
+    min_d = pd.to_datetime(df[date_col], errors="coerce").min()
+    max_d = pd.to_datetime(df[date_col], errors="coerce").max()
 
-    f1, f2, f3, f4 = st.columns([1.0, 1.0, 1.25, 1.0], vertical_alignment="bottom")
-
+    f1, f2, f3 = st.columns([1, 1, 1], vertical_alignment="bottom")
     with f1:
-        start = None
-        if pd.notna(min_d):
-            start = st.date_input(
-                "Desde",
-                value=min_d.date(),
-                min_value=min_d.date(),
-                max_value=max_d.date() if pd.notna(max_d) else min_d.date(),
-            )
-
+        start = st.date_input("Desde", value=min_d.date() if pd.notna(min_d) else None)
     with f2:
-        end = None
-        if pd.notna(max_d):
-            end = st.date_input(
-                "Hasta",
-                value=max_d.date(),
-                min_value=min_d.date() if pd.notna(min_d) else max_d.date(),
-                max_value=max_d.date(),
-            )
-
+        end = st.date_input("Hasta", value=max_d.date() if pd.notna(max_d) else None)
     with f3:
-        cat_sel = st.multiselect("Categorías", options=CATEGORY_ORDER, default=CATEGORY_ORDER)
-
-    with f4:
         sym = st.text_input("Filtrar Symbol", value="").strip().upper()
 
-    # 4) Filtrado (con máscara alineada)
     dff = _filter_by_date(df, date_col, start, end)
 
-    if cat_sel:
-        dff = dff[dff["category"].isin(cat_sel)].copy()
+    if cats:
+        dff = dff[dff["category"].isin(cats)].copy().reset_index(drop=True)
+
     if sym:
-        dff = dff[dff["symbol"].astype(str).str.upper().str.contains(sym, na=False)].copy()
+        dff = dff[dff["symbol_u"].str.contains(sym, na=False)].copy().reset_index(drop=True)
 
-    # 5) Saldo inicial
-    saldo_inicial = _infer_initial_cash(dff, date_col) if auto_initial else float(saldo_inicial_manual)
-
-    # 6) KPI cash
+    # =========================
+    # KPIs cash (global)
+    # =========================
+    # Saldo inicial por default: suma de FEDERAL FUNDS RECEIVED (solo depósitos) antes del primer trade,
+    # pero para no agregar “lógica extra” acá, lo dejamos manual simple:
+    saldo_inicial = st.number_input("Saldo inicial (Cash) — manual", value=0.0, step=1000.0)
     mov_neto = float(dff["net_amount_base"].sum() if len(dff) else 0.0)
-    saldo_final = float(saldo_inicial + mov_neto)
-
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Saldo inicial (Cash)", f"{saldo_inicial:,.2f}")
-    k2.metric("Movimientos netos", f"{mov_neto:,.2f}")
-    k3.metric("Saldo final (Cash)", f"{saldo_final:,.2f}")
-    k4.metric("Movimientos", f"{len(dff):,}")
-
-    # 7) Mensaje “explicativo” sobre FEDERAL FUNDS RECEIVED (lo que vos viste)
-    ff = dff[dff["tx_type"].str.upper().str.contains("FEDERAL FUNDS RECEIVED", na=False)]
-    if len(ff):
-        st.success(
-            f"Detecté {len(ff)} movimiento(s) **FEDERAL FUNDS RECEIVED** (depósitos). "
-            "Esto suele ser el fondeo inicial."
-        )
+    _kpi_row(saldo_inicial, mov_neto, len(dff))
 
     st.divider()
 
     # =========================
     # Tabs
     # =========================
-    tabs = st.tabs(["Overview"] + MAIN_TABS + ["OTHER"])
+    tabs = st.tabs(TAB_ORDER)
 
-    # ---- Overview
+    # ---------------------------------------------------------
+    # TAB 0: Transacciones (Ingresos/Egresos Cash) — tu pedido
+    # ---------------------------------------------------------
     with tabs[0]:
-        left, right = st.columns([1.35, 1.0])
+        st.markdown("### Transacciones · Ingresos/Egresos de dinero (Cash)")
 
-        with left:
-            st.markdown("### Movimientos (tabla limpia)")
-            show_cols = [
-                date_col, "category", "symbol", "buy_sell",
-                "qty_signed", "price", "net_amount_base",
-                "tx_type", "tx_desc",
-            ]
-            view = (
-                dff[show_cols]
-                .sort_values(by=date_col, ascending=True)
-                .reset_index(drop=True)
-            )
-            st.dataframe(view, use_container_width=True, height=460)
+        base = dff.copy().reset_index(drop=True)
 
-        with right:
-            st.markdown("### Suma por categoría")
-            by_cat = (
-                dff.groupby("category", dropna=False)["net_amount_base"]
-                .sum()
-                .reindex(CATEGORY_ORDER)
-                .fillna(0.0)
-                .reset_index()
-                .rename(columns={"net_amount_base": "net_base_sum"})
-            )
-            st.dataframe(by_cat, use_container_width=True, height=240)
+        # Excluir “ACTIVITY WITHIN YOUR ACCT” del análisis de ingresos/egresos
+        base = base[~base["tx_type_u"].isin(EXCLUDE_CASH_TX_TYPES)].copy().reset_index(drop=True)
 
-            st.markdown("### Suma mensual")
-            by_month = (
-                dff.groupby([ym_col, "category"], dropna=False)["net_amount_base"]
-                .sum()
-                .reset_index()
-                .pivot(index=ym_col, columns="category", values="net_amount_base")
-                .reindex(columns=CATEGORY_ORDER)
-                .fillna(0.0)
-                .sort_index()
-            )
-            st.dataframe(by_month, use_container_width=True, height=260)
+        # Para cash, nos quedamos con lo que sea “CURRENCY” (como en tu ejemplo U.S.DOLLARS CURRENCY)
+        is_cash = base["security_desc_u"].str.contains("CURRENCY", na=False)
+        cash = base[is_cash].copy().reset_index(drop=True)
 
-    # ---- Tabs por categoría (las 5 + OTHER)
-    def _render_category(cat: str):
-        dfc = dff[dff["category"] == cat].copy()
+        cuadrito = cash[ESSENTIAL_COLS_ORDER].copy()
+        cuadrito = cuadrito.sort_values(["settlement_date", "process_date"], ascending=True).reset_index(drop=True)
 
-        cA, cB, cC = st.columns([1.0, 1.0, 1.0])
-        cA.metric(f"{cat} — Total", f"{dfc['net_amount_base'].sum():,.2f}")
-        cB.metric(f"{cat} — Movimientos", f"{len(dfc):,}")
+        # KPIs solo cash (para que sea claro)
+        mov_cash = float(cuadrito["net_amount_base"].sum() if len(cuadrito) else 0.0)
+        _kpi_row(saldo_inicial, mov_cash, len(cuadrito))
 
-        if cat == "TRADE":
-            cC.metric("TRADE — Qty (abs)", f"{dfc['qty_signed'].abs().sum():,.4f}")
-        else:
-            cC.metric("—", "")
-
-        show_cols = [
-            date_col, "symbol", "buy_sell", "qty_signed", "price",
-            "net_amount_base", "tx_type", "tx_desc",
-        ]
+        st.caption("Vista filtrada a **Cash/Currency**. Excluye **ACTIVITY WITHIN YOUR ACCT**.")
         st.dataframe(
-            dfc[show_cols].sort_values(by=date_col, ascending=True).reset_index(drop=True),
+            cuadrito,
             use_container_width=True,
+            hide_index=True,
+            column_config={
+                "process_date": st.column_config.DatetimeColumn("Process Date"),
+                "settlement_date": st.column_config.DatetimeColumn("Settlement Date"),
+                "net_amount_base": st.column_config.NumberColumn("Net Amount (Base Currency)", format="%.2f"),
+                "tx_type": st.column_config.TextColumn("Transaction Type"),
+                "security_desc": st.column_config.TextColumn("Security Description"),
+            },
+            height=420,
+        )
+
+    # ---------------------------------------------------------
+    # Resto de tabs: por categoría (simple, sin ruido)
+    # ---------------------------------------------------------
+    def _tab_cat(cat: str):
+        st.markdown(f"### {cat}")
+        dfc = dff[dff["category"] == cat].copy().reset_index(drop=True)
+        st.caption(f"Movimientos en categoría **{cat}**.")
+
+        st.metric("Total (Base Currency)", f"{dfc['net_amount_base'].sum():,.2f}")
+        cols = [
+            "process_date",
+            "settlement_date",
+            "symbol",
+            "buy_sell",
+            "quantity",
+            "price",
+            "net_amount_base",
+            "tx_type",
+            "security_desc",
+        ]
+        show = [c for c in cols if c in dfc.columns]
+        st.dataframe(
+            dfc[show].sort_values(["settlement_date", "process_date"]).reset_index(drop=True),
+            use_container_width=True,
+            hide_index=True,
             height=520,
         )
 
-        if cat in {"TRADE", "INCOME_DIV", "TAX", "FEE", "CASH_MOVEMENT"} and len(dfc):
-            st.markdown("#### Resumen por Symbol")
-            by_sym = (
-                dfc.groupby("symbol", dropna=False)["net_amount_base"]
-                .sum()
-                .sort_values(ascending=True)
-                .reset_index()
-                .rename(columns={"net_amount_base": "net_base_sum"})
-            )
-            st.dataframe(by_sym, use_container_width=True, height=280)
-
-    # MAIN_TABS
-    for i, cat in enumerate(MAIN_TABS, start=1):
+    for i, cat in enumerate(CATEGORIES, start=1):
         with tabs[i]:
-            _render_category(cat)
-
-    # OTHER
-    with tabs[len(MAIN_TABS) + 1]:
-        _render_category("OTHER")
+            _tab_cat(cat)
 
 
 # =========================
-# Wrapper estándar del Workbench
+# Wrapper Workbench
 # =========================
 def render(_ctx=None):
-    """
-    Contrato Workbench: el router llama siempre tool.render(None)
-    """
     render_transactions_analyzer()
