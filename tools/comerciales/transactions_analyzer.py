@@ -136,7 +136,7 @@ def read_sheet_smart(xls: pd.ExcelFile, sheet_name: str) -> pd.DataFrame:
 
 
 # =========================
-# 4) Clasificación REAL (hacia atrás)
+# 4) Clasificación REAL (hacia atrás, siguiendo el Excel)
 # =========================
 TOTAL_LABELS = {
     "TOTAL ACCIONES": "Acciones",
@@ -146,7 +146,6 @@ TOTAL_LABELS = {
     "TOTAL FCI": "FCI",
     "TOTAL CUENTA CORRIENTE": "Cuenta Corriente",
 }
-
 STOP_ROWS = {"TOTAL POSICION"}  # si aparece
 
 
@@ -160,7 +159,8 @@ def tenencias_sheet_to_rows(
     Devuelve:
       - instrumentos_db: filas de instrumentos (sin filas TOTAL)
       - totales_db: filas TOTAL (TOTAL ACCIONES, TOTAL CUENTA CORRIENTE, etc.)
-    Clasifica “hacia atrás” siguiendo el Excel.
+    Clasifica “hacia atrás” siguiendo el Excel:
+      [instrumentos ...]  -> (aparece TOTAL X) => esos instrumentos son clase X
     """
     raw = read_sheet_smart(xls, sheet)
 
@@ -200,7 +200,7 @@ def tenencias_sheet_to_rows(
         if esp_u in STOP_ROWS:
             break
 
-        # si es TOTAL mapeado -> clasificar bloque anterior + guardar total
+        # TOTAL mapeado: clasifica hacia atrás + guarda total
         if esp_u in TOTAL_LABELS:
             clase_total = TOTAL_LABELS[esp_u]
             flush_pending_as(clase_total)
@@ -208,14 +208,14 @@ def tenencias_sheet_to_rows(
             out_totals.append({
                 "comitente": comitente,
                 "fecha_cierre": fecha_cierre,
-                "total_tipo": clase_total,
-                "label": esp_u,
+                "total_tipo": clase_total,     # Acciones / Titulos Publicos / Cuenta Corriente / ...
+                "label": esp_u,                # texto exacto
                 "importe_total": row["importe"],
                 "part_total": row["part"],
             })
             continue
 
-        # cualquier TOTAL (no mapeado) corta bloque, pero no se guarda
+        # TOTAL no mapeado: corta bloque, no guarda
         if esp_u.startswith("TOTAL "):
             flush_pending_as("SinClasificar")
             continue
@@ -232,7 +232,7 @@ def tenencias_sheet_to_rows(
             "part": row["part"],
         })
 
-    # si quedó algo sin TOTAL al final
+    # si quedó algo sin TOTAL al final, va a SinClasificar
     flush_pending_as("SinClasificar")
 
     instrumentos_db = pd.DataFrame(out_instruments)
@@ -240,9 +240,97 @@ def tenencias_sheet_to_rows(
     return instrumentos_db, totales_db
 
 
+# =========================
+# 5) Comparación Mes vs Mes (anterior vs nuevo)
+# =========================
+def _snapshot_totales_por_comitente_fecha(db: pd.DataFrame) -> pd.DataFrame:
+    """
+    Snapshot total por comitente y fecha_cierre.
+    """
+    if db.empty:
+        return pd.DataFrame(columns=["comitente", "fecha_cierre", "total"])
+    d = db.copy()
+    d["fecha_cierre"] = pd.to_datetime(d["fecha_cierre"])
+    snap = (
+        d.groupby(["comitente", "fecha_cierre"], as_index=False)
+         .agg(total=("importe", "sum"))
+         .sort_values(["comitente", "fecha_cierre"])
+    )
+    return snap
+
+def make_mes_a_mes(
+    db: pd.DataFrame,
+    fecha_prev: dt.date,
+    fecha_new: dt.date
+) -> pd.DataFrame:
+    """
+    Devuelve ganancia/pérdida por comitente entre dos cierres:
+      diff = total(fecha_new) - total(fecha_prev)
+    """
+    snap = _snapshot_totales_por_comitente_fecha(db)
+
+    if snap.empty:
+        return pd.DataFrame(columns=["comitente", "total_prev", "total_new", "diferencia"])
+
+    fp = pd.to_datetime(fecha_prev)
+    fn = pd.to_datetime(fecha_new)
+
+    prev = snap[snap["fecha_cierre"].eq(fp)].copy().rename(columns={"total": "total_prev"})
+    new  = snap[snap["fecha_cierre"].eq(fn)].copy().rename(columns={"total": "total_new"})
+
+    out = prev.merge(new[["comitente", "total_new"]], on="comitente", how="outer")
+    out["total_prev"] = out["total_prev"].fillna(0.0)
+    out["total_new"] = out["total_new"].fillna(0.0)
+    out["diferencia"] = out["total_new"] - out["total_prev"]
+
+    out = out.sort_values("diferencia", ascending=False)
+    return out
+
+def make_mes_a_mes_detalle(
+    db: pd.DataFrame,
+    fecha_prev: dt.date,
+    fecha_new: dt.date,
+    nivel: str = "especie"  # "especie" o "clase"
+) -> pd.DataFrame:
+    """
+    Detalle por comitente:
+      - nivel="especie": diff por especie
+      - nivel="clase": diff por clase
+    """
+    if db.empty:
+        cols = ["comitente", nivel, "importe_prev", "importe_new", "diferencia"]
+        return pd.DataFrame(columns=cols)
+
+    d = db.copy()
+    d["fecha_cierre"] = pd.to_datetime(d["fecha_cierre"])
+    fp = pd.to_datetime(fecha_prev)
+    fn = pd.to_datetime(fecha_new)
+
+    key_cols = ["comitente", nivel]
+
+    prev = (
+        d[d["fecha_cierre"].eq(fp)]
+        .groupby(key_cols, as_index=False)
+        .agg(importe_prev=("importe", "sum"))
+    )
+    new = (
+        d[d["fecha_cierre"].eq(fn)]
+        .groupby(key_cols, as_index=False)
+        .agg(importe_new=("importe", "sum"))
+    )
+
+    out = prev.merge(new, on=key_cols, how="outer")
+    out["importe_prev"] = out["importe_prev"].fillna(0.0)
+    out["importe_new"] = out["importe_new"].fillna(0.0)
+    out["diferencia"] = out["importe_new"] - out["importe_prev"]
+
+    out = out.sort_values(["comitente", "diferencia"], ascending=[True, False])
+    return out
+
+
 def make_total_cc_anual(totales_db: pd.DataFrame) -> pd.DataFrame:
     """
-    Tabla anual: TOTAL CUENTA CORRIENTE por comitente y año.
+    Tabla anual: TOTAL CUENTA CORRIENTE por comitente y año (por si la querés igual).
     """
     if totales_db.empty:
         return pd.DataFrame(columns=["comitente", "anio", "importe_total_cc"])
@@ -259,13 +347,6 @@ def make_total_cc_anual(totales_db: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def group_sum(df: pd.DataFrame, by: List[str]) -> pd.DataFrame:
-    if df.empty:
-        return pd.DataFrame(columns=by + ["importe"])
-    g = df.groupby(by, as_index=False).agg(importe=("importe", "sum"))
-    return g.sort_values("importe", ascending=False)
-
-
 def to_excel_bytes(base: pd.DataFrame, sheets: Dict[str, pd.DataFrame]) -> bytes:
     bio = BytesIO()
     with pd.ExcelWriter(bio, engine="openpyxl") as writer:
@@ -276,11 +357,11 @@ def to_excel_bytes(base: pd.DataFrame, sheets: Dict[str, pd.DataFrame]) -> bytes
 
 
 # =========================
-# 5) Entry point Workbench
+# 6) Entry point Workbench
 # =========================
 def render_tenencias_to_db() -> None:
-    st.header("Tenencias valorizadas → Base tipo DB")
-    st.caption("Convierte un Excel (una hoja por comitente+mes) en una tabla tipo base de datos + totales y total CC anual.")
+    st.header("Tenencias valorizadas → Base tipo DB + Mes a Mes")
+    st.caption("Convierte el Excel (hojas: comitente + mes) en una base y calcula variación mes anterior vs mes nuevo.")
 
     uploaded = st.file_uploader("Subí el Excel de tenencias", type=["xlsx", "xls"], key="ten_up")
     if not uploaded:
@@ -309,13 +390,13 @@ def render_tenencias_to_db() -> None:
     comitentes = sorted(meta_df["comitente"].unique())
     sel_com = st.multiselect("Comitentes a procesar", comitentes, default=comitentes, key="ten_coms")
 
-    only_latest = st.checkbox("Solo último mes por comitente", value=False, key="ten_latest")
+    only_latest = st.checkbox("Solo último mes por comitente (para base)", value=False, key="ten_latest")
 
-    colA, colB = st.columns([1, 1])
+    colA, colB = st.columns([1, 2])
     with colA:
         run = st.button("Procesar", type="primary", key="ten_run")
     with colB:
-        st.caption("Tip: si tenés muchas hojas, probá primero con 1 comitente para validar lectura.")
+        st.caption("Tip: si hay muchas hojas, probá con 1 comitente para validar lectura y clasificación.")
 
     if not run:
         return
@@ -356,52 +437,100 @@ def render_tenencias_to_db() -> None:
         columns=["comitente", "fecha_cierre", "total_tipo", "label", "importe_total", "part_total"]
     )
 
-    # Resúmenes
+    # -----------------
+    # Mes a Mes (prev vs new)
+    # -----------------
+    fechas_disponibles = sorted({pd.to_datetime(x).date() for x in meta_df["fecha_cierre"].tolist()})
+    if len(fechas_disponibles) >= 2:
+        default_prev = fechas_disponibles[-2]
+        default_new = fechas_disponibles[-1]
+    else:
+        default_prev = fechas_disponibles[0]
+        default_new = fechas_disponibles[0]
+
+    st.subheader("Comparación Mes a Mes")
+    c1, c2, c3 = st.columns([1, 1, 2])
+    with c1:
+        fecha_prev = st.selectbox("Mes anterior (cierre)", fechas_disponibles, index=max(0, len(fechas_disponibles)-2), key="mm_prev")
+    with c2:
+        fecha_new = st.selectbox("Mes nuevo (cierre)", fechas_disponibles, index=max(0, len(fechas_disponibles)-1), key="mm_new")
+    with c3:
+        nivel_detalle = st.radio("Detalle", ["especie", "clase"], horizontal=True, index=0, key="mm_nivel")
+
+    mm = make_mes_a_mes(db, fecha_prev=fecha_prev, fecha_new=fecha_new)
+    mm_det = make_mes_a_mes_detalle(db, fecha_prev=fecha_prev, fecha_new=fecha_new, nivel=nivel_detalle)
+
+    gan_total = float(mm["diferencia"].sum()) if not mm.empty else 0.0
+    st.metric(f"Variación total (nuevo - anterior) [{fecha_new} vs {fecha_prev}]", f"{gan_total:,.2f}")
+
+    # Resumen por clase (por fecha)
     resumen_clase = (
         db.groupby(["comitente", "fecha_cierre", "clase"], as_index=False)
-          .agg(
-              importe=("importe", "sum"),
-              part=("part", "sum"),
-              instrumentos=("especie", "count"),
-          )
+          .agg(importe=("importe", "sum"), instrumentos=("especie", "count"))
           .sort_values(["comitente", "fecha_cierre", "importe"], ascending=[True, True, False])
     )
 
+    # Total CC anual (por si querés seguir esa idea)
     total_cc_anual = make_total_cc_anual(totales)
 
-    st.success(f"Listo: {len(db):,} filas (instrumentos). Totales detectados: {len(totales):,}")
+    # -----------------
+    # Tabs
+    # -----------------
+    t1, t2, t3, t4, t5, t6 = st.tabs([
+        "Base",
+        "Resumen por clase",
+        "Totales",
+        "Mes a Mes (comitente)",
+        f"Detalle M/M ({nivel_detalle})",
+        "TOTAL CC anual",
+    ])
 
-    t1, t2, t3, t4 = st.tabs(["Base", "Resumen por clase", "Totales", "TOTAL CC anual"])
     with t1:
         st.dataframe(db, use_container_width=True, hide_index=True)
+
     with t2:
         st.dataframe(resumen_clase, use_container_width=True, hide_index=True)
+
     with t3:
         st.dataframe(totales, use_container_width=True, hide_index=True)
+
     with t4:
+        st.subheader("Ganancia/Pérdida por comitente (mes nuevo - mes anterior)")
+        st.dataframe(mm, use_container_width=True, hide_index=True)
+
+    with t5:
+        st.subheader(f"Detalle por {nivel_detalle} (mes nuevo - mes anterior)")
+        # para no explotar la UI si es enorme
+        st.dataframe(mm_det, use_container_width=True, hide_index=True, height=520)
+
+    with t6:
         st.dataframe(total_cc_anual, use_container_width=True, hide_index=True)
 
+    # -----------------
     # Export
+    # -----------------
     excel_bytes = to_excel_bytes(
         db,
         {
             "resumen_clase": resumen_clase,
             "totales_db": totales,
+            "MM_COMITENTE": mm,
+            f"MM_DET_{nivel_detalle.upper()}": mm_det,
             "TOTAL_CC_ANUAL": total_cc_anual,
         }
     )
 
     st.download_button(
-        "Descargar Excel (base + resúmenes + totales)",
+        "Descargar Excel (base + resúmenes + mes a mes)",
         data=excel_bytes,
-        file_name="tenencias_base_datos.xlsx",
+        file_name="tenencias_base_datos_mes_a_mes.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="ten_dl",
     )
 
 
 # =========================
-# 6) Workbench expected entrypoint
+# 7) Workbench expected entrypoint
 # =========================
 def render():
     """Entry point estándar para NEIX Workbench."""
