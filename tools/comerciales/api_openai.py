@@ -1,9 +1,5 @@
 import streamlit as st
-
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
+import anthropic
 
 
 def render():
@@ -13,59 +9,39 @@ def render():
         unsafe_allow_html=True
     )
 
-    if OpenAI is None:
-        st.error("La librería 'openai' no está instalada. Agregala a requirements.txt y redeployá la app.")
-        return
-
-    api_key = st.secrets.get("OPENAI_API_KEY")
+    api_key = st.secrets.get("ANTHROPIC_API_KEY")
     if not api_key:
-        st.error("Falta configurar OPENAI_API_KEY en los secrets de Streamlit.")
+        st.error("Falta configurar ANTHROPIC_API_KEY en los secrets de Streamlit.")
         return
 
-    client = OpenAI(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key)
 
     pregunta = st.text_area(
         "Escribí tu consulta",
-        placeholder="Ej: Resumime los movimientos más relevantes o explicame las principales variaciones de la cartera.",
+        placeholder="Ej: resumime los movimientos más frecuentes o explicame las principales variaciones.",
         height=120,
-        key="ia_comercial_input"
+        key="claude_input"
     )
 
-    if st.button("Consultar IA", key="ia_comercial_btn"):
+    if st.button("Consultar IA", key="claude_btn"):
         if not pregunta.strip():
             st.warning("Escribí una consulta primero.")
             return
 
         try:
             with st.spinner("Analizando..."):
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
+                response = client.messages.create(
+                    model="claude-sonnet-4-5",
+                    max_tokens=800,
+                    system="Sos un analista financiero experto en una ALyC argentina. Respondés de forma clara, profesional y útil para análisis comercial y de cartera.",
                     messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "Sos un analista financiero experto en una ALyC argentina. "
-                                "Respondés de forma clara, profesional y útil para análisis comercial y de cartera."
-                            )
-                        },
-                        {
-                            "role": "user",
-                            "content": pregunta
-                        }
+                        {"role": "user", "content": pregunta}
                     ]
                 )
 
             st.markdown("### Respuesta")
-            st.write(response.choices[0].message.content)
+            st.write(response.content[0].text)
 
         except Exception as e:
-            msg = str(e)
-
-            if "insufficient_quota" in msg or "429" in msg:
-                st.error(
-                    "La API está conectada, pero esta clave/proyecto no tiene cuota disponible. "
-                    "Revisá billing, saldo o límites del proyecto en OpenAI."
-                )
-            else:
-                st.error("Ocurrió un error al consultar la API.")
-                st.exception(e)
+            st.error("Error al consultar Claude.")
+            st.exception(e)
