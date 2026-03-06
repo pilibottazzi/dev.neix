@@ -123,7 +123,7 @@ st.markdown(
         border:1px solid rgba(0,0,0,0.08);
         background:white;
         text-decoration:none !important;
-        color:#0f172a !important;
+        color:#1e3a8a  !important;
         font-weight:700;
         min-width:240px;
         box-shadow:0 2px 10px rgba(0,0,0,0.04);
