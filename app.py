@@ -8,7 +8,7 @@ BI_BANCA_PRIVADA = "https://lookerstudio.google.com/reporting/75c2a6d0-0086-491f
 BI_BANCA_CORP = "https://lookerstudio.google.com/reporting/4f70efa8-2b86-4134-a9cb-9e6f90117f3b"
 BI_MIDDLE = "https://lookerstudio.google.com/reporting/5b834e5f-aeef-4042-ac0f-e1ed3564a010"
 
-# ✅ SharePoint Marketing (carpetas)
+# SharePoint Marketing
 SP_MKT_INSTRUCTIVOS = "https://neixcom.sharepoint.com/sites/NEIXSOCIEDADDEBOLSAS.A-Marketingprueba/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FNEIXSOCIEDADDEBOLSAS%2EA%2DMarketingprueba%2FShared%20Documents%2FMarketing%2FInstructivos&viewid=74e4d9a3%2Dd2c9%2D4f09%2D9bc8%2Deb59e613117f&p=true"
 SP_MKT_MATERIALES = "https://neixcom.sharepoint.com/sites/NEIXSOCIEDADDEBOLSAS.A-Marketingprueba/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FNEIXSOCIEDADDEBOLSAS%2EA%2DMarketingprueba%2FShared%20Documents%2FMarketing%2FMateriales%20de%20Marketing&viewid=74e4d9a3%2Dd2c9%2D4f09%2D9bc8%2Deb59e613117f&p=true"
 SP_MKT_PRESENTACIONES = "https://neixcom.sharepoint.com/sites/NEIXSOCIEDADDEBOLSAS.A-Marketingprueba/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FNEIXSOCIEDADDEBOLSAS%2EA%2DMarketingprueba%2FShared%20Documents%2FMarketing%2FPresentaciones&viewid=74e4d9a3%2Dd2c9%2D4f09%2D9bc8%2Deb59e613117f&p=true"
@@ -25,43 +25,49 @@ st.set_page_config(
 
 
 # =========================
-# ESTÉTICA PREMIUM
+# ESTÉTICA
 # =========================
 st.markdown(
     """
     <style>
-    /* ===== Contenedor general ===== */
     .block-container{
-        padding-top: 2.4rem;
+        padding-top: 2.3rem;
         max-width: 1240px;
     }
 
-    /* Oculta header nativo SIN romper layout */
     header[data-testid="stHeader"]{
         visibility: hidden;
         height: 3.25rem;
     }
 
-    /* ===== Header ===== */
     .neix-title{
         text-align: center;
         font-weight: 900;
-        letter-spacing: .12em;
+        letter-spacing: .14em;
         font-size: 1.55rem;
         margin-top: .2rem;
         margin-bottom: 4px;
+        color: #0f172a;
     }
+
     .neix-caption{
         text-align: center;
         color:#6b7280;
         font-size:.95rem;
-        margin-bottom: 18px;
+        margin-bottom: 4px;
     }
 
-    /* ===== Tabs arriba (alineadas a la izquierda) ===== */
+    .neix-accent{
+        width: 70px;
+        height: 2px;
+        background: linear-gradient(90deg, #ef4444, rgba(239,68,68,.30));
+        border-radius: 999px;
+        margin: 8px auto 12px auto;
+    }
+
     .stTabs [data-baseweb="tab-list"]{
         justify-content: flex-start;
-        gap: 6px;
+        gap: 8px;
         border-bottom: 1px solid rgba(0,0,0,0.08);
         padding-left: 2px;
         margin-top: 6px;
@@ -72,7 +78,7 @@ st.markdown(
         border: none;
         font-weight: 700;
         color: #6b7280;
-        padding: 10px 14px;
+        padding: 10px 16px;
         font-size: .95rem;
     }
 
@@ -83,23 +89,23 @@ st.markdown(
 
     .stTabs [aria-selected="true"]{
         color:#111827;
-        border-bottom: 3px solid #ef4444; /* rojo NEIX */
+        border-bottom: 3px solid #ef4444;
     }
 
-    /* ===== Secciones ===== */
     .section-title{
-        font-size:1.35rem;
+        font-size:1.32rem;
         font-weight:800;
-        margin-top: 6px;
+        margin-top: 4px;
         margin-bottom: 2px;
+        color:#0f172a;
     }
+
     .section-sub{
         color:#6b7280;
         font-size:.92rem;
         margin-bottom:14px;
     }
 
-    /* ===== Cards ===== */
     .tool-grid{
         display:flex;
         gap:14px;
@@ -112,32 +118,50 @@ st.markdown(
         align-items:center;
         justify-content:center;
         padding:14px 18px;
+        min-height:52px;
         border-radius:14px;
         border:1px solid rgba(0,0,0,0.08);
         background:white;
         text-decoration:none !important;
+        color:#0f172a !important;
         font-weight:700;
-        color:#0f172a;
         min-width:240px;
         box-shadow:0 2px 10px rgba(0,0,0,0.04);
-        transition: all .08s ease;
+        transition: all .10s ease;
     }
 
     .tool-btn:hover{
         transform: translateY(-1px);
         box-shadow:0 8px 22px rgba(0,0,0,0.08);
         border-color: rgba(239,68,68,.35);
+        text-decoration:none !important;
+        color:#0f172a !important;
     }
 
-    /* Botón destacado rojo (link externo Backoffice) */
+    .tool-btn:visited,
+    .tool-btn:focus,
+    .tool-btn:active{
+        text-decoration:none !important;
+        color:#0f172a !important;
+    }
+
     .tool-btn-primary{
         background:#ef4444 !important;
         color:white !important;
-        border-color: rgba(0,0,0,0) !important;
+        border-color: transparent !important;
     }
+
     .tool-btn-primary:hover{
-        filter: brightness(.96);
+        filter: brightness(.98);
         box-shadow:0 10px 26px rgba(239,68,68,.18);
+        color:white !important;
+    }
+
+    .tool-btn-primary:visited,
+    .tool-btn-primary:focus,
+    .tool-btn-primary:active{
+        color:white !important;
+        text-decoration:none !important;
     }
     </style>
     """,
@@ -146,8 +170,14 @@ st.markdown(
 
 
 def _header():
-    st.markdown("<div class='neix-title'>N E I X &nbsp;&nbsp;Workbench</div>", unsafe_allow_html=True)
-    st.markdown("<div class='neix-caption'>Navegación por áreas y proyectos</div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="neix-title">N E I X &nbsp;&nbsp;Workbench</div>
+        <div class="neix-caption">Navegación por áreas y proyectos</div>
+        <div class="neix-accent"></div>
+        """,
+        unsafe_allow_html=True
+    )
     st.divider()
 
 
@@ -166,15 +196,19 @@ if tool:
         if tool == "bonos":
             bonos.render(None)
             st.stop()
+
         elif tool == "ons":
             ons.render(None)
             st.stop()
+
         elif tool == "cartera":
             cartera.render(None)
             st.stop()
+
         elif tool == "cartera2":
             cartera2.render(None)
             st.stop()
+
         elif tool in ("tenencia", "tenencias", "vencimientos"):
             vencimientos.render(None)
             st.stop()
@@ -185,32 +219,35 @@ if tool:
         elif tool == "cauciones_mae":
             cauciones_mae.render(None)
             st.stop()
+
         elif tool == "cn":
             cn.render(None)
             st.stop()
+
         elif tool == "cauciones_byma":
             cauciones_byma.render(None)
             st.stop()
+
         elif tool == "alquileres":
             alquileres.render(None)
             st.stop()
+
         elif tool == "transactions_analyzer":
             transactions_analyzer.render()
             st.stop()
 
-
         # -------------------------
-        # Marketing (links a SharePoint)
+        # Marketing
         # -------------------------
         elif tool == "mkt_instructivos":
             st.markdown("<div class='section-title'>Marketing · Instructivos</div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-sub'>Carpeta compartida (SharePoint)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-sub'>Carpeta compartida en SharePoint</div>", unsafe_allow_html=True)
             st.markdown(
                 f"""
                 <div class="tool-grid">
-                  <a class="tool-btn" href="{SP_MKT_INSTRUCTIVOS}" target="_blank" rel="noopener noreferrer">
-                    Abrir Instructivos
-                  </a>
+                    <a class="tool-btn" href="{SP_MKT_INSTRUCTIVOS}" target="_blank" rel="noopener noreferrer">
+                        Abrir Instructivos
+                    </a>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -219,13 +256,13 @@ if tool:
 
         elif tool == "mkt_materiales":
             st.markdown("<div class='section-title'>Marketing · Materiales</div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-sub'>Carpeta compartida (SharePoint)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-sub'>Carpeta compartida en SharePoint</div>", unsafe_allow_html=True)
             st.markdown(
                 f"""
                 <div class="tool-grid">
-                  <a class="tool-btn" href="{SP_MKT_MATERIALES}" target="_blank" rel="noopener noreferrer">
-                    Abrir Materiales de Marketing
-                  </a>
+                    <a class="tool-btn" href="{SP_MKT_MATERIALES}" target="_blank" rel="noopener noreferrer">
+                        Abrir Materiales de Marketing
+                    </a>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -234,13 +271,13 @@ if tool:
 
         elif tool == "mkt_presentaciones":
             st.markdown("<div class='section-title'>Marketing · Presentaciones</div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-sub'>Carpeta compartida (SharePoint)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-sub'>Carpeta compartida en SharePoint</div>", unsafe_allow_html=True)
             st.markdown(
                 f"""
                 <div class="tool-grid">
-                  <a class="tool-btn" href="{SP_MKT_PRESENTACIONES}" target="_blank" rel="noopener noreferrer">
-                    Abrir Presentaciones
-                  </a>
+                    <a class="tool-btn" href="{SP_MKT_PRESENTACIONES}" target="_blank" rel="noopener noreferrer">
+                        Abrir Presentaciones
+                    </a>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -248,17 +285,17 @@ if tool:
             st.stop()
 
         # -------------------------
-        # Operaciones -> solo link externo
+        # Operaciones / Backoffice
         # -------------------------
         elif tool in ("operaciones", "backoffice"):
+            st.markdown("<div class='section-title'>Operaciones</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-sub'>Backoffice se abre en una web externa</div>", unsafe_allow_html=True)
             st.markdown(
                 f"""
-                <div class="section-title">Operaciones</div>
-                <div class="section-sub">Backoffice se abre en web externa (para evitar saturación del Workbench)</div>
                 <div class="tool-grid">
-                  <a class="tool-btn tool-btn-primary" href="{BACKOFFICE_URL}" target="_blank" rel="noopener noreferrer">
-                    Abrir Backoffice
-                  </a>
+                    <a class="tool-btn tool-btn-primary" href="{BACKOFFICE_URL}" target="_blank" rel="noopener noreferrer">
+                        Abrir Backoffice
+                    </a>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -280,96 +317,108 @@ if tool:
 # =========================
 _header()
 
-tabs = st.tabs(["Mesa", "Comercial", "Operaciones", "Performance · BI", "Marketing"])
+tabs = st.tabs(["Comercial", "Operaciones", "Mesa", "Performance · BI", "Marketing"])
 
-# MESA
-with tabs[0]:
-    st.markdown("<div class='section-title'>Mesa</div>", unsafe_allow_html=True)
-    st.markdown("<div class='section-sub'>Bonos, ONs y carteras</div>", unsafe_allow_html=True)
 
-    st.markdown(
-        """
-        <div class="tool-grid">
-          <a class="tool-btn" href="?tool=bonos">Bonos</a>
-          <a class="tool-btn" href="?tool=ons">Obligaciones Negociables</a>
-          <a class="tool-btn" href="?tool=cartera">Carteras (rendimiento)</a>
-          <a class="tool-btn" href="?tool=cartera2">Carteras (ARG)</a>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
+# =========================
 # COMERCIAL
-with tabs[1]:
+# =========================
+with tabs[0]:
     st.markdown("<div class='section-title'>Comercial</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-sub'>Seguimiento y herramientas comerciales</div>", unsafe_allow_html=True)
 
     st.markdown(
         """
         <div class="tool-grid">
-          <a class="tool-btn" href="?tool=cauciones_mae">Cauciones MAE</a>
-          <a class="tool-btn" href="?tool=cauciones_byma">Cauciones BYMA</a>
-          <a class="tool-btn" href="?tool=alquileres">Alquileres</a>
-          <a class="tool-btn" href="?tool=tenencia">Tenencia</a>
-          <a class="tool-btn" href="?tool=cn">CN</a>
-          <a class="tool-btn" href="?tool=transactions_analyzer">Movimientos CV</a>
+            <a class="tool-btn" href="?tool=cauciones_mae">Cauciones MAE</a>
+            <a class="tool-btn" href="?tool=cauciones_byma">Cauciones BYMA</a>
+            <a class="tool-btn" href="?tool=alquileres">Alquileres</a>
+            <a class="tool-btn" href="?tool=tenencia">Tenencia</a>
+            <a class="tool-btn" href="?tool=cn">CN</a>
+            <a class="tool-btn" href="?tool=transactions_analyzer">Movimientos CV</a>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-# OPERACIONES (solo link externo)
-with tabs[2]:
+
+# =========================
+# OPERACIONES
+# =========================
+with tabs[1]:
     st.markdown("<div class='section-title'>Operaciones</div>", unsafe_allow_html=True)
-    st.markdown("<div class='section-sub'>Se abre en web externa</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-sub'>Acceso al entorno externo de Backoffice</div>", unsafe_allow_html=True)
 
     st.markdown(
         f"""
         <div class="tool-grid">
-          <a class="tool-btn tool-btn-primary" href="{BACKOFFICE_URL}" target="_blank" rel="noopener noreferrer">
-            Abrir Backoffice
-          </a>
+            <a class="tool-btn tool-btn-primary" href="{BACKOFFICE_URL}" target="_blank" rel="noopener noreferrer">
+                Abrir Backoffice
+            </a>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-# PERFORMANCE / BI
+
+# =========================
+# MESA
+# =========================
+with tabs[2]:
+    st.markdown("<div class='section-title'>Mesa</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-sub'>Bonos, ONs y carteras</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        """
+        <div class="tool-grid">
+            <a class="tool-btn" href="?tool=bonos">Bonos</a>
+            <a class="tool-btn" href="?tool=ons">Obligaciones Negociables</a>
+            <a class="tool-btn" href="?tool=cartera">Carteras (rendimiento)</a>
+            <a class="tool-btn" href="?tool=cartera2">Carteras (ARG)</a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# =========================
+# PERFORMANCE · BI
+# =========================
 with tabs[3]:
     st.markdown("<div class='section-title'>Performance · BI</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='section-sub'>Dashboards de performance y seguimiento por área</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<div class='section-sub'>Dashboards de performance y seguimiento por área</div>", unsafe_allow_html=True)
 
     st.markdown(
         f"""
         <div class="tool-grid">
-          <a class="tool-btn" href="{BI_BANCA_PRIVADA}" target="_blank" rel="noopener noreferrer">
-            Banca Privada
-          </a>
-          <a class="tool-btn" href="{BI_BANCA_CORP}" target="_blank" rel="noopener noreferrer">
-            Banca Corporativa
-          </a>
-          <a class="tool-btn" href="{BI_MIDDLE}" target="_blank" rel="noopener noreferrer">
-            Middle Office
-          </a>
+            <a class="tool-btn" href="{BI_BANCA_PRIVADA}" target="_blank" rel="noopener noreferrer">
+                Banca Privada
+            </a>
+            <a class="tool-btn" href="{BI_BANCA_CORP}" target="_blank" rel="noopener noreferrer">
+                Banca Corporativa
+            </a>
+            <a class="tool-btn" href="{BI_MIDDLE}" target="_blank" rel="noopener noreferrer">
+                Middle Office
+            </a>
         </div>
         """,
         unsafe_allow_html=True
     )
 
+
+# =========================
 # MARKETING
+# =========================
 with tabs[4]:
     st.markdown("<div class='section-title'>Marketing</div>", unsafe_allow_html=True)
-    st.markdown("<div class='section-sub'>Encuestas y carpetas compartidas</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-sub'>Acceso a carpetas e instructivos compartidos</div>", unsafe_allow_html=True)
 
     st.markdown(
-        f"""
+        """
         <div class="tool-grid">
-          <a class="tool-btn" href="?tool=mkt_instructivos" target="_self">Instructivos</a>
-          <a class="tool-btn" href="?tool=mkt_materiales" target="_self">Materiales de Marketing</a>
-          <a class="tool-btn" href="?tool=mkt_presentaciones" target="_self">Presentaciones</a>
+            <a class="tool-btn" href="?tool=mkt_instructivos" target="_self">Instructivos</a>
+            <a class="tool-btn" href="?tool=mkt_materiales" target="_self">Materiales de Marketing</a>
+            <a class="tool-btn" href="?tool=mkt_presentaciones" target="_self">Presentaciones</a>
         </div>
         """,
         unsafe_allow_html=True
