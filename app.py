@@ -30,74 +30,76 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    /* ===== Contenedor general ===== */
     .block-container{
-        padding-top: 2.3rem;
+        padding-top: 2.2rem;
         max-width: 1240px;
     }
 
     header[data-testid="stHeader"]{
         visibility: hidden;
-        height: 3.25rem;
+        height: 3rem;
     }
 
+    /* ===== Header ===== */
     .neix-title{
-        text-align: center;
-        font-weight: 900;
-        letter-spacing: .14em;
-        font-size: 1.55rem;
-        margin-top: .2rem;
-        margin-bottom: 4px;
-        color: #0f172a;
+        text-align:center;
+        font-weight:900;
+        letter-spacing:.14em;
+        font-size:1.6rem;
+        margin-bottom:4px;
     }
 
     .neix-caption{
-        text-align: center;
+        text-align:center;
         color:#6b7280;
         font-size:.95rem;
-        margin-bottom: 4px;
+        margin-bottom:10px;
     }
 
-    .neix-accent{
-        width: 70px;
-        height: 2px;
-        background: linear-gradient(90deg, #ef4444, rgba(239,68,68,.30));
-        border-radius: 999px;
-        margin: 8px auto 12px auto;
+    /* Línea roja bajo el título */
+    .neix-line{
+        width:60px;
+        height:3px;
+        background:#ef4444;
+        margin:0 auto 22px auto;
+        border-radius:4px;
     }
 
+    /* ===== Tabs ===== */
     .stTabs [data-baseweb="tab-list"]{
-        justify-content: flex-start;
-        gap: 8px;
-        border-bottom: 1px solid rgba(0,0,0,0.08);
-        padding-left: 2px;
-        margin-top: 6px;
+        justify-content:flex-start;
+        gap:8px;
+        border-bottom:1px solid rgba(0,0,0,0.08);
+        padding-left:2px;
+        margin-top:4px;
     }
 
     .stTabs [data-baseweb="tab"]{
-        background: transparent;
-        border: none;
-        font-weight: 700;
-        color: #6b7280;
-        padding: 10px 16px;
-        font-size: .95rem;
+        background:transparent;
+        border:none;
+        font-weight:700;
+        color:#64748b;
+        padding:10px 14px;
+        font-size:.95rem;
     }
 
     .stTabs [data-baseweb="tab"]:hover{
-        color:#111827;
-        background: transparent;
+        color:#1e3a8a;
     }
 
     .stTabs [aria-selected="true"]{
-        color:#111827;
-        border-bottom: 3px solid #ef4444;
+        color:#1e3a8a;
+        border-bottom:3px solid #ef4444;
     }
 
+    /* ===== Section Titles ===== */
     .section-title{
-        font-size:1.32rem;
+        font-size:1.35rem;
         font-weight:800;
-        margin-top: 4px;
-        margin-bottom: 2px;
-        color:#0f172a;
+        margin-top:6px;
+        margin-bottom:2px;
+        color:#111827;
     }
 
     .section-sub{
@@ -106,6 +108,7 @@ st.markdown(
         margin-bottom:14px;
     }
 
+    /* ===== Cards ===== */
     .tool-grid{
         display:flex;
         gap:14px;
@@ -117,13 +120,13 @@ st.markdown(
         display:flex;
         align-items:center;
         justify-content:center;
-        padding:14px 18px;
+        padding:12px 18px;
         min-height:52px;
         border-radius:14px;
         border:1px solid rgba(0,0,0,0.08);
         background:white;
         text-decoration:none !important;
-        color:#0f172a !important;
+        color:#1e3a8a !important;   /* 🔵 Azul corporativo */
         font-weight:700;
         min-width:240px;
         box-shadow:0 2px 10px rgba(0,0,0,0.04);
@@ -134,35 +137,21 @@ st.markdown(
         transform: translateY(-1px);
         box-shadow:0 8px 22px rgba(0,0,0,0.08);
         border-color: rgba(239,68,68,.35);
-        text-decoration:none !important;
-        color:#0f172a !important;
+        color:#1e3a8a !important;
     }
 
-    .tool-btn:visited,
-    .tool-btn:focus,
-    .tool-btn:active{
-        text-decoration:none !important;
-        color:#0f172a !important;
-    }
-
+    /* Botón rojo destacado */
     .tool-btn-primary{
         background:#ef4444 !important;
         color:white !important;
-        border-color: transparent !important;
+        border-color:transparent !important;
     }
 
     .tool-btn-primary:hover{
-        filter: brightness(.98);
+        filter:brightness(.96);
         box-shadow:0 10px 26px rgba(239,68,68,.18);
-        color:white !important;
     }
 
-    .tool-btn-primary:visited,
-    .tool-btn-primary:focus,
-    .tool-btn-primary:active{
-        color:white !important;
-        text-decoration:none !important;
-    }
     </style>
     """,
     unsafe_allow_html=True
